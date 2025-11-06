@@ -17,6 +17,8 @@ interface Review {
   rating: number
   comment?: string
   isVerified: boolean
+  sellerResponse?: string
+  respondedAt?: string
   createdAt: string
   user: {
     username: string
@@ -67,8 +69,10 @@ export default function ProductDetailPage() {
   const [relatedProducts, setRelatedProducts] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [reviewVotes, setReviewVotes] = useState<Record<string, { helpfulCount: number; notHelpfulCount: number; userVote: boolean | null }>>({})
+  const [respondingTo, setRespondingTo] = useState<string | null>(null)
+  const [responseText, setResponseText] = useState('')
   const { addToCart } = useCartStore()
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, user } = useAuthStore()
 
   useEffect(() => {
     if (params.id) {
@@ -183,6 +187,59 @@ export default function ProductDetailPage() {
     } catch (error) {
       console.error('Error voting on review:', error)
       toast.error('Failed to vote')
+    }
+  }
+
+  const handleSellerResponse = async (reviewId: string) => {
+    if (!responseText.trim()) {
+      toast.error('Please enter a response')
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/reviews/${reviewId}/response`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ response: responseText }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        toast.success('Response added successfully!')
+        setRespondingTo(null)
+        setResponseText('')
+        fetchProduct() // Refresh to show the response
+      } else {
+        toast.error(data.error || 'Failed to add response')
+      }
+    } catch (error) {
+      console.error('Error adding response:', error)
+      toast.error('Failed to add response')
+    }
+  }
+
+  const handleDeleteResponse = async (reviewId: string) => {
+    if (!confirm('Are you sure you want to delete your response?')) return
+
+    try {
+      const response = await fetch(`/api/reviews/${reviewId}/response`, {
+        method: 'DELETE',
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        toast.success('Response deleted successfully!')
+        fetchProduct() // Refresh to remove the response
+      } else {
+        toast.error(data.error || 'Failed to delete response')
+      }
+    } catch (error) {
+      console.error('Error deleting response:', error)
+      toast.error('Failed to delete response')
     }
   }
 
@@ -467,6 +524,74 @@ export default function ProductDetailPage() {
                         </div>
                         {review.comment && (
                           <p className="text-gray-700 mb-4">{review.comment}</p>
+                        )}
+
+                        {/* Seller Response */}
+                        {review.sellerResponse && (
+                          <div className="mt-4 ml-8 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center space-x-2">
+                                <span className="text-sm font-semibold text-blue-900">
+                                  Seller Response
+                                </span>
+                                {review.respondedAt && (
+                                  <span className="text-xs text-blue-600">
+                                    {format(new Date(review.respondedAt), 'MMM dd, yyyy')}
+                                  </span>
+                                )}
+                              </div>
+                              {user?.userId === product.seller.id && (
+                                <button
+                                  onClick={() => handleDeleteResponse(review.id)}
+                                  className="text-xs text-red-600 hover:text-red-700"
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-sm text-blue-900">{review.sellerResponse}</p>
+                          </div>
+                        )}
+
+                        {/* Seller Response Form */}
+                        {user?.userId === product.seller.id && !review.sellerResponse && (
+                          <div className="mt-4 ml-8">
+                            {respondingTo === review.id ? (
+                              <div className="space-y-3">
+                                <textarea
+                                  value={responseText}
+                                  onChange={(e) => setResponseText(e.target.value)}
+                                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent outline-none resize-none"
+                                  rows={3}
+                                  placeholder="Write your response..."
+                                />
+                                <div className="flex items-center space-x-2">
+                                  <button
+                                    onClick={() => handleSellerResponse(review.id)}
+                                    className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 transition"
+                                  >
+                                    Post Response
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setRespondingTo(null)
+                                      setResponseText('')
+                                    }}
+                                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setRespondingTo(review.id)}
+                                className="text-sm text-purple-600 hover:text-purple-700 font-medium"
+                              >
+                                Respond to this review
+                              </button>
+                            )}
+                          </div>
                         )}
 
                         {/* Vote Buttons */}

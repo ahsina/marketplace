@@ -285,3 +285,21 @@ model Coupon {
   @@index([isActive])
   @@index([expiresAt])
 }
+
+model Bundle {
+  id              String      @id @default(cuid())
+  name            String
+  description     String
+  price           Float
+  discountPercent Float
+  isActive        Boolean     @default(true)
+  salesCount      Int         @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  sellerId        String
+  productIds      String      // JSON array of product IDs
+
+  @@index([sellerId])
+  @@index([isActive])
+}

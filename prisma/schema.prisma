@@ -70,6 +70,7 @@ model User {
   receivedMessages   Message[]       @relation("ReceivedMessages")
   notifications      Notification[]
   passwordResets     PasswordResetToken[]
+  sellerVerification SellerVerification? @relation("SellerVerificationRequest")
 
   @@index([email])
   @@index([username])
@@ -438,4 +439,195 @@ model PasswordResetToken {
   @@index([token])
   @@index([userId])
   @@index([expiresAt])
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model SellerVerification {
+  id              String             @id @default(cuid())
+  userId          String             @unique
+  user            User               @relation("SellerVerificationRequest", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Business Info
+  businessName    String?
+  businessType    String?
+  taxId           String?
+
+  // Identity Documents
+  idDocumentUrl   String?
+  proofOfAddress  String?
+
+  // Status
+  status          VerificationStatus @default(PENDING)
+  rejectionReason String?
+  reviewedBy      String?
+  reviewedAt      DateTime?
+
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model ProductApproval {
+  id              String         @id @default(cuid())
+  productId       String         @unique
+  status          ApprovalStatus @default(PENDING)
+  rejectionReason String?
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([productId])
+  @@index([status])
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Ticket {
+  id          String         @id @default(cuid())
+  ticketNumber String        @unique
+  userId      String
+  orderId     String?
+
+  subject     String
+  description String
+  priority    TicketPriority @default(MEDIUM)
+  status      TicketStatus   @default(OPEN)
+
+  assignedTo  String?
+  resolvedAt  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  messages    TicketMessage[]
+
+  @@index([userId])
+  @@index([orderId])
+  @@index([status])
+  @@index([ticketNumber])
+}
+
+model TicketMessage {
+  id         String   @id @default(cuid())
+  ticketId   String
+  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  userId     String
+  message    String
+  isStaff    Boolean  @default(false)
+
+  createdAt  DateTime @default(now())
+
+  @@index([ticketId])
+}
+
+model Referral {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  referrerId      String
+
+  // Stats
+  clicks          Int      @default(0)
+  conversions     Int      @default(0)
+  totalEarnings   Float    @default(0)
+
+  // Config
+  commissionRate  Float    @default(0.1) // 10% default
+  isActive        Boolean  @default(true)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  referrals       ReferralConversion[]
+
+  @@index([code])
+  @@index([referrerId])
+}
+
+model ReferralConversion {
+  id          String   @id @default(cuid())
+  referralId  String
+  referral    Referral @relation(fields: [referralId], references: [id], onDelete: Cascade)
+
+  newUserId   String
+  orderId     String?
+
+  commission  Float
+  paid        Boolean  @default(false)
+  paidAt      DateTime?
+
+  createdAt   DateTime @default(now())
+
+  @@index([referralId])
+  @@index([newUserId])
+  @@index([orderId])
+}
+
+enum WebhookEvent {
+  ORDER_CREATED
+  ORDER_COMPLETED
+  ORDER_REFUNDED
+  PRODUCT_CREATED
+  PRODUCT_UPDATED
+  REVIEW_CREATED
+}
+
+model Webhook {
+  id          String   @id @default(cuid())
+  userId      String
+
+  url         String
+  secret      String
+  events      String   // JSON array of WebhookEvent
+  isActive    Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  logs        WebhookLog[]
+
+  @@index([userId])
+  @@index([isActive])
+}
+
+model WebhookLog {
+  id          String   @id @default(cuid())
+  webhookId   String
+  webhook     Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  event       String
+  payload     String   // JSON
+  response    String?
+  statusCode  Int?
+  success     Boolean
+
+  createdAt   DateTime @default(now())
+
+  @@index([webhookId])
+  @@index([createdAt])
 }

@@ -7,7 +7,7 @@ import { sendEmail, getWelcomeEmail, getEmailVerificationEmail } from '@/lib/ema
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, username, password } = await request.json()
+    const { email, username, password, referralCode } = await request.json()
 
     // Validation
     if (!email || !username || !password) {
@@ -45,6 +45,20 @@ export async function POST(request: NextRequest) {
     const verificationExpiry = new Date()
     verificationExpiry.setHours(verificationExpiry.getHours() + 24)
 
+    // Validate referral code if provided
+    let referral = null
+    if (referralCode) {
+      referral = await prisma.referral.findUnique({
+        where: { code: referralCode, isActive: true }
+      })
+      if (!referral) {
+        return NextResponse.json<ApiResponse>(
+          { success: false, error: 'Invalid referral code' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Create user
     const user = await prisma.user.create({
       data: {
@@ -64,6 +78,23 @@ export async function POST(request: NextRequest) {
         createdAt: true,
       },
     })
+
+    // Track referral conversion (no commission yet, will be added on first purchase)
+    if (referral) {
+      await prisma.referralConversion.create({
+        data: {
+          referralId: referral.id,
+          newUserId: user.id,
+          commission: 0 // Will be updated on first order
+        }
+      })
+
+      // Increment conversion count
+      await prisma.referral.update({
+        where: { id: referral.id },
+        data: { conversions: { increment: 1 } }
+      })
+    }
 
     // Generate token
     const token = generateToken({

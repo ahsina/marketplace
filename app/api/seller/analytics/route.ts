@@ -21,6 +21,12 @@ export async function GET(request: NextRequest) {
     const startDate = new Date()
     startDate.setDate(startDate.getDate() - daysAgo)
 
+    // Calculate previous period for comparison
+    const previousPeriodStart = new Date()
+    previousPeriodStart.setDate(previousPeriodStart.getDate() - (daysAgo * 2))
+    const previousPeriodEnd = new Date()
+    previousPeriodEnd.setDate(previousPeriodEnd.getDate() - daysAgo)
+
     // Get seller's products
     const products = await prisma.product.findMany({
       where: {
@@ -64,6 +70,20 @@ export async function GET(request: NextRequest) {
       },
     })
 
+    // Get orders from previous period for comparison
+    const previousOrders = await prisma.order.findMany({
+      where: {
+        sellerId: user.userId,
+        createdAt: {
+          gte: previousPeriodStart,
+          lt: previousPeriodEnd,
+        },
+      },
+      select: {
+        sellerAmount: true,
+      },
+    })
+
     // Get reviews for seller's products
     const reviews = await prisma.review.findMany({
       where: {
@@ -96,6 +116,23 @@ export async function GET(request: NextRequest) {
       date,
       revenue: dailyRevenue[date],
       orders: dailyOrders[date],
+    }))
+
+    // Calculate day of week performance
+    const dayOfWeekRevenue: Record<number, number> = {}
+    const dayOfWeekOrders: Record<number, number> = {}
+
+    orders.forEach((order) => {
+      const dayOfWeek = order.createdAt.getDay() // 0 = Sunday, 6 = Saturday
+      dayOfWeekRevenue[dayOfWeek] = (dayOfWeekRevenue[dayOfWeek] || 0) + order.sellerAmount
+      dayOfWeekOrders[dayOfWeek] = (dayOfWeekOrders[dayOfWeek] || 0) + 1
+    })
+
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    const dayOfWeekData = dayNames.map((name, index) => ({
+      day: name,
+      revenue: dayOfWeekRevenue[index] || 0,
+      orders: dayOfWeekOrders[index] || 0,
     }))
 
     // Calculate product performance
@@ -141,6 +178,18 @@ export async function GET(request: NextRequest) {
         ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
         : 0
 
+    // Calculate trends (comparison with previous period)
+    const previousRevenue = previousOrders.reduce((sum, o) => sum + o.sellerAmount, 0)
+    const previousOrderCount = previousOrders.length
+
+    const revenueTrend = previousRevenue > 0
+      ? ((totalRevenue - previousRevenue) / previousRevenue) * 100
+      : totalRevenue > 0 ? 100 : 0
+
+    const ordersTrend = previousOrderCount > 0
+      ? ((totalOrders - previousOrderCount) / previousOrderCount) * 100
+      : totalOrders > 0 ? 100 : 0
+
     // Order status breakdown
     const ordersByStatus = {
       PENDING: orders.filter((o) => o.status === 'PENDING').length,
@@ -159,8 +208,11 @@ export async function GET(request: NextRequest) {
         avgOrderValue,
         avgRating: Math.round(avgRating * 10) / 10,
         totalProducts: products.length,
+        revenueTrend: Math.round(revenueTrend * 10) / 10,
+        ordersTrend: Math.round(ordersTrend * 10) / 10,
       },
       revenueData,
+      dayOfWeekData,
       productPerformance: productPerformance.slice(0, 10), // Top 10
       ordersByStatus,
       period: daysAgo,

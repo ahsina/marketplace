@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, TrendingUp, DollarSign, ShoppingBag, Eye, Download, Star, Calendar } from 'lucide-react'
+import { ArrowLeft, TrendingUp, TrendingDown, DollarSign, ShoppingBag, Eye, Download, Star, Calendar } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -19,9 +19,16 @@ interface Analytics {
     avgOrderValue: number
     avgRating: number
     totalProducts: number
+    revenueTrend: number
+    ordersTrend: number
   }
   revenueData: Array<{
     date: string
+    revenue: number
+    orders: number
+  }>
+  dayOfWeekData: Array<{
+    day: string
     revenue: number
     orders: number
   }>
@@ -132,12 +139,20 @@ export default function AnalyticsPage() {
                   <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                     <DollarSign className="w-6 h-6 text-green-600" />
                   </div>
-                  <TrendingUp className="w-5 h-5 text-green-600" />
+                  {analytics.summary.revenueTrend >= 0 ? (
+                    <TrendingUp className="w-5 h-5 text-green-600" />
+                  ) : (
+                    <TrendingDown className="w-5 h-5 text-red-600" />
+                  )}
                 </div>
                 <div className="text-3xl font-bold text-gray-900 mb-1">
                   {formatPrice(analytics.summary.totalRevenue)}
                 </div>
                 <div className="text-sm text-gray-600">Total Revenue</div>
+                <div className={`text-xs mt-2 flex items-center space-x-1 ${analytics.summary.revenueTrend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <span>{analytics.summary.revenueTrend >= 0 ? '+' : ''}{analytics.summary.revenueTrend.toFixed(1)}%</span>
+                  <span className="text-gray-500">vs prev period</span>
+                </div>
               </div>
 
               <div className="bg-white rounded-xl shadow-lg p-6">
@@ -145,13 +160,19 @@ export default function AnalyticsPage() {
                   <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
                     <ShoppingBag className="w-6 h-6 text-blue-600" />
                   </div>
+                  {analytics.summary.ordersTrend >= 0 ? (
+                    <TrendingUp className="w-5 h-5 text-green-600" />
+                  ) : (
+                    <TrendingDown className="w-5 h-5 text-red-600" />
+                  )}
                 </div>
                 <div className="text-3xl font-bold text-gray-900 mb-1">
                   {analytics.summary.totalOrders}
                 </div>
                 <div className="text-sm text-gray-600">Total Orders</div>
-                <div className="text-xs text-gray-500 mt-2">
-                  Avg: {formatPrice(analytics.summary.avgOrderValue)}
+                <div className={`text-xs mt-2 flex items-center space-x-1 ${analytics.summary.ordersTrend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <span>{analytics.summary.ordersTrend >= 0 ? '+' : ''}{analytics.summary.ordersTrend.toFixed(1)}%</span>
+                  <span className="text-gray-500">vs prev period</span>
                 </div>
               </div>
 
@@ -223,6 +244,47 @@ export default function AnalyticsPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+
+            {/* Day of Week Analysis */}
+            <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+              <h2 className="text-xl font-bold text-gray-900 mb-6">Sales by Day of Week</h2>
+              {analytics.dayOfWeekData && analytics.dayOfWeekData.length > 0 ? (
+                <div className="space-y-3">
+                  {(() => {
+                    const maxDayRevenue = Math.max(...analytics.dayOfWeekData.map((d) => d.revenue), 1)
+                    return analytics.dayOfWeekData.map((day, index) => (
+                      <div key={index} className="flex items-center space-x-3">
+                        <div className="w-28 text-sm font-medium text-gray-700 flex-shrink-0">
+                          {day.day}
+                        </div>
+                        <div className="flex-1">
+                          <div className="relative h-8 bg-gray-100 rounded-lg overflow-hidden">
+                            <div
+                              className="absolute inset-y-0 left-0 bg-gradient-to-r from-green-600 to-teal-500 rounded-lg transition-all duration-500"
+                              style={{
+                                width: `${(day.revenue / maxDayRevenue) * 100}%`,
+                              }}
+                            ></div>
+                            <div className="absolute inset-0 flex items-center px-3">
+                              <span className="text-sm font-medium text-gray-900">
+                                {formatPrice(day.revenue)}
+                              </span>
+                              <span className="text-xs text-gray-600 ml-2">
+                                ({day.orders} {day.orders === 1 ? 'order' : 'orders'})
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  })()}
+                </div>
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  No sales data for day of week analysis
                 </div>
               )}
             </div>

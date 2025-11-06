@@ -188,9 +188,24 @@ model Review {
   productId   String
   product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
+  votes       ReviewVote[]
+
   @@unique([userId, productId])
   @@index([productId])
   @@index([rating])
+}
+
+model ReviewVote {
+  id          String   @id @default(cuid())
+  isHelpful   Boolean
+  createdAt   DateTime @default(now())
+
+  userId      String
+  reviewId    String
+  review      Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, reviewId])
+  @@index([reviewId])
 }
 
 model Message {

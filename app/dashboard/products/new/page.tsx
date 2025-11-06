@@ -14,6 +14,8 @@ export default function NewProductPage() {
   const { isAuthenticated, token } = useAuthStore()
   const [isLoading, setIsLoading] = useState(false)
   const [categories, setCategories] = useState<any[]>([])
+  const [tags, setTags] = useState<string[]>([])
+  const [tagInput, setTagInput] = useState('')
   const [formData, setFormData] = useState({
     title: '',
     shortDescription: '',
@@ -46,6 +48,24 @@ export default function NewProductPage() {
     ])
   }, [isAuthenticated])
 
+  const addTag = () => {
+    if (tagInput.trim() && !tags.includes(tagInput.trim())) {
+      setTags([...tags, tagInput.trim()])
+      setTagInput('')
+    }
+  }
+
+  const removeTag = (tagToRemove: string) => {
+    setTags(tags.filter(tag => tag !== tagToRemove))
+  }
+
+  const handleTagKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      addTag()
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -69,6 +89,7 @@ export default function NewProductPage() {
           fileUrl: formData.fileUrl || 'https://example.com/file.zip',
           fileName: formData.fileName || 'product-file.zip',
           fileSize: formData.fileSize || '10485760', // 10MB
+          tags: tags.length > 0 ? tags : undefined,
         }),
       })
 
@@ -291,6 +312,64 @@ export default function NewProductPage() {
                   placeholder="https://demo.example.com"
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Tags */}
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Tags</h2>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Add Tags (Optional)
+                </label>
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyPress={handleTagKeyPress}
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent outline-none"
+                    placeholder="e.g., wordpress, responsive, modern"
+                  />
+                  <button
+                    type="button"
+                    onClick={addTag}
+                    className="px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition"
+                  >
+                    Add
+                  </button>
+                </div>
+                <p className="text-sm text-gray-500 mt-1">
+                  Press Enter or click Add to add a tag. Tags help buyers find your product.
+                </p>
+              </div>
+
+              {tags.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Current Tags ({tags.length})
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {tags.map((tag) => (
+                      <div
+                        key={tag}
+                        className="inline-flex items-center space-x-2 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-full text-sm font-medium"
+                      >
+                        <span>#{tag}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeTag(tag)}
+                          className="text-purple-600 hover:text-purple-800 transition"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

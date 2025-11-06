@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, ShoppingCart, Star, Download, Shield, Zap, User } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, Star, Download, Shield, Zap, User, ThumbsUp, ThumbsDown } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import { useCartStore } from '@/store/useCartStore'
@@ -21,6 +21,14 @@ interface Review {
   user: {
     username: string
   }
+  _count?: {
+    votes: number
+  }
+  votes?: {
+    isHelpful: boolean
+  }[]
+  helpfulCount?: number
+  notHelpfulCount?: number
 }
 
 interface Product {
@@ -37,6 +45,7 @@ interface Product {
   downloadCount: number
   viewCount: number
   averageRating: number
+  tags?: string
   createdAt: string
   seller: {
     id: string
@@ -57,6 +66,7 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null)
   const [relatedProducts, setRelatedProducts] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [reviewVotes, setReviewVotes] = useState<Record<string, { helpfulCount: number; notHelpfulCount: number; userVote: boolean | null }>>({})
   const { addToCart } = useCartStore()
   const { isAuthenticated } = useAuthStore()
 
@@ -67,6 +77,15 @@ export default function ProductDetailPage() {
       trackView()
     }
   }, [params.id])
+
+  useEffect(() => {
+    // Fetch vote counts for all reviews when product is loaded
+    if (product?.reviews) {
+      product.reviews.forEach(review => {
+        fetchReviewVotes(review.id)
+      })
+    }
+  }, [product?.reviews.length])
 
   const trackView = async () => {
     try {
@@ -108,6 +127,62 @@ export default function ProductDetailPage() {
       }
     } catch (error) {
       console.error('Error fetching related products:', error)
+    }
+  }
+
+  const fetchReviewVotes = async (reviewId: string) => {
+    try {
+      const response = await fetch(`/api/reviews/${reviewId}/vote`)
+      const data = await response.json()
+
+      if (data.success) {
+        setReviewVotes(prev => ({
+          ...prev,
+          [reviewId]: {
+            helpfulCount: data.data.helpfulCount,
+            notHelpfulCount: data.data.notHelpfulCount,
+            userVote: data.data.userVote,
+          }
+        }))
+      }
+    } catch (error) {
+      console.error('Error fetching review votes:', error)
+    }
+  }
+
+  const handleVote = async (reviewId: string, isHelpful: boolean) => {
+    if (!isAuthenticated) {
+      toast.error('Please login to vote on reviews')
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/reviews/${reviewId}/vote`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ isHelpful }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setReviewVotes(prev => ({
+          ...prev,
+          [reviewId]: {
+            helpfulCount: data.data.helpfulCount,
+            notHelpfulCount: data.data.notHelpfulCount,
+            userVote: isHelpful,
+          }
+        }))
+        toast.success('Thank you for your feedback!')
+      } else {
+        toast.error(data.error || 'Failed to vote')
+      }
+    } catch (error) {
+      console.error('Error voting on review:', error)
+      toast.error('Failed to vote')
     }
   }
 
@@ -312,6 +387,34 @@ export default function ProductDetailPage() {
                   {product.description}
                 </p>
               </div>
+
+              {/* Tags */}
+              {product.tags && (() => {
+                try {
+                  const tags = JSON.parse(product.tags)
+                  if (Array.isArray(tags) && tags.length > 0) {
+                    return (
+                      <div className="mt-6 pt-6 border-t border-gray-200">
+                        <h3 className="text-sm font-semibold text-gray-900 mb-3">Tags</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {tags.map((tag: string, index: number) => (
+                            <Link
+                              key={index}
+                              href={`/marketplace?search=${encodeURIComponent(tag)}`}
+                              className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-700 hover:bg-purple-200 transition"
+                            >
+                              #{tag}
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  }
+                } catch (e) {
+                  return null
+                }
+                return null
+              })()}
             </div>
 
             {/* Reviews */}
@@ -322,45 +425,81 @@ export default function ProductDetailPage() {
 
               {product.reviews.length > 0 ? (
                 <div className="space-y-6">
-                  {product.reviews.map((review) => (
-                    <div key={review.id} className="border-b border-gray-200 pb-6 last:border-0">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-                            <User className="w-5 h-5 text-purple-600" />
+                  {product.reviews.map((review) => {
+                    const voteData = reviewVotes[review.id]
+                    const helpfulCount = voteData?.helpfulCount || 0
+                    const notHelpfulCount = voteData?.notHelpfulCount || 0
+                    const userVote = voteData?.userVote
+
+                    return (
+                      <div key={review.id} className="border-b border-gray-200 pb-6 last:border-0">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                              <User className="w-5 h-5 text-purple-600" />
+                            </div>
+                            <div>
+                              <div className="font-medium text-gray-900">
+                                {review.user.username}
+                                {review.isVerified && (
+                                  <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+                                    Verified Purchase
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                {format(new Date(review.createdAt), 'MMM dd, yyyy')}
+                              </div>
+                            </div>
                           </div>
-                          <div>
-                            <div className="font-medium text-gray-900">
-                              {review.user.username}
-                              {review.isVerified && (
-                                <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
-                                  Verified Purchase
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {format(new Date(review.createdAt), 'MMM dd, yyyy')}
-                            </div>
+                          <div className="flex items-center">
+                            {[...Array(5)].map((_, i) => (
+                              <Star
+                                key={i}
+                                className={`w-4 h-4 ${
+                                  i < review.rating
+                                    ? 'text-yellow-400 fill-current'
+                                    : 'text-gray-300'
+                                }`}
+                              />
+                            ))}
                           </div>
                         </div>
-                        <div className="flex items-center">
-                          {[...Array(5)].map((_, i) => (
-                            <Star
-                              key={i}
-                              className={`w-4 h-4 ${
-                                i < review.rating
-                                  ? 'text-yellow-400 fill-current'
-                                  : 'text-gray-300'
+                        {review.comment && (
+                          <p className="text-gray-700 mb-4">{review.comment}</p>
+                        )}
+
+                        {/* Vote Buttons */}
+                        <div className="flex items-center space-x-4 mt-3">
+                          <span className="text-sm text-gray-600">Was this review helpful?</span>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => handleVote(review.id, true)}
+                              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                                userVote === true
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                               }`}
-                            />
-                          ))}
+                            >
+                              <ThumbsUp className="w-4 h-4" />
+                              <span>{helpfulCount}</span>
+                            </button>
+                            <button
+                              onClick={() => handleVote(review.id, false)}
+                              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                                userVote === false
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                              }`}
+                            >
+                              <ThumbsDown className="w-4 h-4" />
+                              <span>{notHelpfulCount}</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
-                      {review.comment && (
-                        <p className="text-gray-700">{review.comment}</p>
-                      )}
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : (
                 <div className="text-center py-12 text-gray-500">

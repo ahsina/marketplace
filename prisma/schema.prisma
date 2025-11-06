@@ -58,6 +58,8 @@ model User {
   ordersAsSeller     Order[]         @relation("SellerOrders")
   reviews            Review[]
   transactions       Transaction[]
+  sentMessages       Message[]       @relation("SentMessages")
+  receivedMessages   Message[]       @relation("ReceivedMessages")
 
   @@index([email])
   @@index([username])
@@ -184,4 +186,26 @@ model Review {
   @@unique([userId, productId])
   @@index([productId])
   @@index([rating])
+}
+
+model Message {
+  id          String   @id @default(cuid())
+  subject     String
+  message     String
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  senderId    String
+  sender      User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  receiverId  String
+  receiver    User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  productId   String?
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([isRead])
+  @@index([createdAt])
 }

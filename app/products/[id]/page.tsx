@@ -55,6 +55,7 @@ export default function ProductDetailPage() {
   const params = useParams()
   const router = useRouter()
   const [product, setProduct] = useState<Product | null>(null)
+  const [relatedProducts, setRelatedProducts] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const { addToCart } = useCartStore()
   const { isAuthenticated } = useAuthStore()
@@ -62,6 +63,7 @@ export default function ProductDetailPage() {
   useEffect(() => {
     if (params.id) {
       fetchProduct()
+      fetchRelatedProducts()
     }
   }, [params.id])
 
@@ -84,9 +86,23 @@ export default function ProductDetailPage() {
     }
   }
 
-  const handleAddToCart = () => {
-    if (!product) return
-    addToCart(product as any)
+  const fetchRelatedProducts = async () => {
+    try {
+      const response = await fetch(`/api/products/${params.id}/related`)
+      const data = await response.json()
+
+      if (data.success) {
+        setRelatedProducts(data.data)
+      }
+    } catch (error) {
+      console.error('Error fetching related products:', error)
+    }
+  }
+
+  const handleAddToCart = (prod?: any) => {
+    const productToAdd = prod || product
+    if (!productToAdd) return
+    addToCart(productToAdd as any)
     toast.success('Added to cart!')
   }
 
@@ -417,6 +433,103 @@ export default function ProductDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Related Products */}
+        {relatedProducts.length > 0 && (
+          <div className="mt-16">
+            <h2 className="text-3xl font-bold text-gray-900 mb-8">
+              Related Products
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {relatedProducts.slice(0, 4).map((relatedProduct) => (
+                <div
+                  key={relatedProduct.id}
+                  className="bg-white rounded-lg shadow hover:shadow-lg transition group"
+                >
+                  <Link href={`/products/${relatedProduct.id}`}>
+                    <div className="relative h-48 bg-gradient-to-br from-purple-100 to-blue-100 rounded-t-lg overflow-hidden">
+                      {relatedProduct.thumbnailUrl ? (
+                        <img
+                          src={relatedProduct.thumbnailUrl}
+                          alt={relatedProduct.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition"
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center h-full">
+                          <div className="text-6xl">📦</div>
+                        </div>
+                      )}
+                      {relatedProduct.discountPrice && (
+                        <div className="absolute top-2 right-2 bg-red-500 text-white px-2 py-1 rounded text-sm font-semibold">
+                          {Math.round(
+                            ((relatedProduct.price - relatedProduct.discountPrice) /
+                              relatedProduct.price) *
+                              100
+                          )}
+                          % OFF
+                        </div>
+                      )}
+                    </div>
+                  </Link>
+
+                  <div className="p-4">
+                    <div className="text-xs text-purple-600 font-medium mb-1">
+                      {relatedProduct.category.name}
+                    </div>
+
+                    <Link href={`/products/${relatedProduct.id}`}>
+                      <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2 hover:text-purple-600 transition">
+                        {relatedProduct.title}
+                      </h3>
+                    </Link>
+
+                    <div className="flex items-center space-x-2 mb-3">
+                      <div className="flex items-center">
+                        <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                        <span className="text-sm text-gray-600 ml-1">
+                          {relatedProduct.averageRating > 0
+                            ? relatedProduct.averageRating.toFixed(1)
+                            : 'New'}
+                        </span>
+                      </div>
+                      <span className="text-gray-300">•</span>
+                      <span className="text-sm text-gray-600">
+                        {relatedProduct.downloadCount} sales
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        {relatedProduct.discountPrice ? (
+                          <>
+                            <span className="text-lg font-bold text-gray-900">
+                              {formatPrice(relatedProduct.discountPrice)}
+                            </span>
+                            <span className="text-sm text-gray-400 line-through ml-2">
+                              {formatPrice(relatedProduct.price)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-lg font-bold text-gray-900">
+                            {formatPrice(relatedProduct.price)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleAddToCart(relatedProduct)}
+                      className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white py-2 rounded-lg font-medium hover:opacity-90 transition flex items-center justify-center space-x-2"
+                    >
+                      <ShoppingCart className="w-4 h-4" />
+                      <span>Add to Cart</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <Footer />

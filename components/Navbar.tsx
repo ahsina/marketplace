@@ -1,15 +1,17 @@
 'use client'
 
 import Link from 'next/link'
-import { ShoppingCart, User, Search, Menu, X } from 'lucide-react'
+import { ShoppingCart, User, Search, Menu, X, Heart, Mail } from 'lucide-react'
 import { useState } from 'react'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useCartStore } from '@/store/useCartStore'
+import { useWishlistStore } from '@/store/useWishlistStore'
 
 export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const { isAuthenticated, user, logout } = useAuthStore()
   const { getTotalItems } = useCartStore()
+  const { getTotalItems: getWishlistTotal } = useWishlistStore()
 
   return (
     <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200">
@@ -43,6 +45,21 @@ export default function Navbar() {
             <button className="p-2 hover:bg-gray-100 rounded-lg transition">
               <Search className="w-5 h-5 text-gray-600" />
             </button>
+
+            {isAuthenticated && (
+              <Link href="/messages" className="p-2 hover:bg-gray-100 rounded-lg transition relative">
+                <Mail className="w-5 h-5 text-gray-600" />
+              </Link>
+            )}
+
+            <Link href="/wishlist" className="p-2 hover:bg-gray-100 rounded-lg transition relative">
+              <Heart className="w-5 h-5 text-gray-600" />
+              {getWishlistTotal() > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  {getWishlistTotal()}
+                </span>
+              )}
+            </Link>
 
             <Link href="/cart" className="p-2 hover:bg-gray-100 rounded-lg transition relative">
               <ShoppingCart className="w-5 h-5 text-gray-600" />

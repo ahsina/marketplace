@@ -12,6 +12,9 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')
     const sortBy = searchParams.get('sortBy') || 'createdAt'
     const order = searchParams.get('order') || 'desc'
+    const minPrice = searchParams.get('minPrice')
+    const maxPrice = searchParams.get('maxPrice')
+    const minRating = searchParams.get('minRating')
 
     const skip = (page - 1) * pageSize
 
@@ -28,6 +31,13 @@ export async function GET(request: NextRequest) {
         { title: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
       ]
+    }
+
+    // Price range filter
+    if (minPrice || maxPrice) {
+      where.price = {}
+      if (minPrice) where.price.gte = parseFloat(minPrice)
+      if (maxPrice) where.price.lte = parseFloat(maxPrice)
     }
 
     const [products, total] = await Promise.all([
@@ -62,7 +72,7 @@ export async function GET(request: NextRequest) {
       prisma.product.count({ where }),
     ])
 
-    const productsWithRatings = products.map((product) => {
+    let productsWithRatings = products.map((product) => {
       const avgRating =
         product.reviews.length > 0
           ? product.reviews.reduce((sum, r) => sum + r.rating, 0) / product.reviews.length
@@ -76,12 +86,35 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    // Filter by minimum rating if specified
+    if (minRating) {
+      const minRatingValue = parseFloat(minRating)
+      productsWithRatings = productsWithRatings.filter(
+        (p) => p.averageRating >= minRatingValue
+      )
+    }
+
+    // Special sorting for popularity (downloads) and rating
+    if (sortBy === 'downloads') {
+      productsWithRatings.sort((a, b) =>
+        order === 'desc'
+          ? b.downloadCount - a.downloadCount
+          : a.downloadCount - b.downloadCount
+      )
+    } else if (sortBy === 'rating') {
+      productsWithRatings.sort((a, b) =>
+        order === 'desc'
+          ? b.averageRating - a.averageRating
+          : a.averageRating - b.averageRating
+      )
+    }
+
     const response: PaginatedResponse<typeof productsWithRatings[0]> = {
       items: productsWithRatings,
-      total,
+      total: productsWithRatings.length,
       page,
       pageSize,
-      totalPages: Math.ceil(total / pageSize),
+      totalPages: Math.ceil(productsWithRatings.length / pageSize),
     }
 
     return NextResponse.json<ApiResponse>(

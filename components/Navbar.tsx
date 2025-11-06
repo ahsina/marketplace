@@ -1,17 +1,41 @@
 'use client'
 
 import Link from 'next/link'
-import { ShoppingCart, User, Search, Menu, X, Heart, Mail } from 'lucide-react'
-import { useState } from 'react'
+import { ShoppingCart, User, Search, Menu, X, Heart, Mail, Bell } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useCartStore } from '@/store/useCartStore'
 import { useWishlistStore } from '@/store/useWishlistStore'
+import SearchBar from './SearchBar'
 
 export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
+  const [notificationCount, setNotificationCount] = useState(0)
   const { isAuthenticated, user, logout } = useAuthStore()
   const { getTotalItems } = useCartStore()
   const { getTotalItems: getWishlistTotal } = useWishlistStore()
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchNotificationCount()
+      // Poll for new notifications every 30 seconds
+      const interval = setInterval(fetchNotificationCount, 30000)
+      return () => clearInterval(interval)
+    }
+  }, [isAuthenticated])
+
+  const fetchNotificationCount = async () => {
+    try {
+      const response = await fetch('/api/notifications?unreadOnly=true&limit=1')
+      const data = await response.json()
+      if (data.success) {
+        setNotificationCount(data.data.unreadCount)
+      }
+    } catch (error) {
+      console.error('Error fetching notification count:', error)
+    }
+  }
 
   return (
     <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200">
@@ -42,14 +66,27 @@ export default function Navbar() {
 
           {/* Right Side Actions */}
           <div className="hidden md:flex items-center space-x-4">
-            <button className="p-2 hover:bg-gray-100 rounded-lg transition">
+            <button
+              onClick={() => setShowSearch(!showSearch)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition"
+            >
               <Search className="w-5 h-5 text-gray-600" />
             </button>
 
             {isAuthenticated && (
-              <Link href="/messages" className="p-2 hover:bg-gray-100 rounded-lg transition relative">
-                <Mail className="w-5 h-5 text-gray-600" />
-              </Link>
+              <>
+                <Link href="/notifications" className="p-2 hover:bg-gray-100 rounded-lg transition relative">
+                  <Bell className="w-5 h-5 text-gray-600" />
+                  {notificationCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                      {notificationCount}
+                    </span>
+                  )}
+                </Link>
+                <Link href="/messages" className="p-2 hover:bg-gray-100 rounded-lg transition relative">
+                  <Mail className="w-5 h-5 text-gray-600" />
+                </Link>
+              </>
             )}
 
             <Link href="/wishlist" className="p-2 hover:bg-gray-100 rounded-lg transition relative">
@@ -171,6 +208,24 @@ export default function Navbar() {
           </div>
         )}
       </div>
+
+      {/* Search Overlay */}
+      {showSearch && (
+        <div className="absolute top-full left-0 right-0 bg-white border-b border-gray-200 shadow-lg">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Search Products</h3>
+              <button
+                onClick={() => setShowSearch(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <SearchBar />
+          </div>
+        </div>
+      )}
     </nav>
   )
 }

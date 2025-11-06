@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getUserFromRequest } from '@/lib/auth'
 import { ApiResponse } from '@/types'
+import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 
 export async function GET(
   request: NextRequest,
@@ -116,6 +117,17 @@ export async function PUT(
         fileSize: body.fileSize ? parseInt(body.fileSize) : undefined,
       },
     })
+
+    // Dispatch PRODUCT_UPDATED webhook (async, don't wait)
+    dispatchWebhook('PRODUCT_UPDATED', {
+      productId: updatedProduct.id,
+      title: updatedProduct.title,
+      price: updatedProduct.price,
+      discountPrice: updatedProduct.discountPrice,
+      isActive: updatedProduct.isActive,
+      sellerId: updatedProduct.sellerId,
+      updatedAt: updatedProduct.updatedAt
+    }, updatedProduct.sellerId).catch(err => console.error('Failed to dispatch PRODUCT_UPDATED webhook:', err))
 
     return NextResponse.json<ApiResponse>(
       {

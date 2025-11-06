@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { ApiResponse } from '@/types'
 import { generateLicenseKey } from '@/lib/license'
+import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 
 // This endpoint receives webhooks from the payment gateway (e.g., PayGate.io)
 // when a payment is confirmed on the blockchain
@@ -108,6 +109,17 @@ export async function POST(request: NextRequest) {
       )
 
       await prisma.$transaction(operations)
+
+      // Dispatch ORDER_COMPLETED webhook (async, don't wait)
+      dispatchWebhook('ORDER_COMPLETED', {
+        orderId: transaction.order.id,
+        orderNumber: transaction.order.orderNumber,
+        totalAmount: transaction.order.totalAmount,
+        buyerId: transaction.order.buyerId,
+        sellerId: transaction.order.sellerId,
+        productId: transaction.order.productId,
+        completedAt: new Date().toISOString()
+      }, transaction.order.sellerId).catch(err => console.error('Failed to dispatch ORDER_COMPLETED webhook:', err))
 
       console.log(`✅ Payment confirmed for order ${transaction.order.orderNumber}`)
     } else if (status === 'failed') {

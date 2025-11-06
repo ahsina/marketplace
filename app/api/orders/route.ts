@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { getUserFromRequest } from '@/lib/auth'
 import { ApiResponse } from '@/types'
 import { generateOrderNumber, calculatePlatformFee, calculateSellerAmount } from '@/utils/helpers'
+import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 
 export async function POST(request: NextRequest) {
   try {
@@ -69,6 +70,53 @@ export async function POST(request: NextRequest) {
     )
 
     const totalAmount = orders.reduce((sum, order) => sum + order.totalAmount, 0)
+
+    // Handle referral commissions for first-time buyers
+    const existingOrders = await prisma.order.count({
+      where: { buyerId: user.userId, status: 'COMPLETED' }
+    })
+
+    if (existingOrders === 0) {
+      // This is the user's first order, check for referral conversion
+      const referralConversion = await prisma.referralConversion.findFirst({
+        where: { newUserId: user.userId, orderId: null },
+        include: { referral: true }
+      })
+
+      if (referralConversion && orders.length > 0) {
+        // Calculate commission on first order
+        const commission = totalAmount * referralConversion.referral.commissionRate
+
+        await prisma.referralConversion.update({
+          where: { id: referralConversion.id },
+          data: {
+            orderId: orders[0].id,
+            commission
+          }
+        })
+
+        // Update referral total earnings
+        await prisma.referral.update({
+          where: { id: referralConversion.referralId },
+          data: {
+            totalEarnings: { increment: commission }
+          }
+        })
+      }
+    }
+
+    // Dispatch webhooks for each order (async, don't wait)
+    orders.forEach(order => {
+      dispatchWebhook('ORDER_CREATED', {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        totalAmount: order.totalAmount,
+        buyerId: order.buyerId,
+        sellerId: order.sellerId,
+        productId: order.productId,
+        createdAt: order.createdAt
+      }, order.sellerId).catch(err => console.error('Failed to dispatch ORDER_CREATED webhook:', err))
+    })
 
     return NextResponse.json<ApiResponse>(
       {

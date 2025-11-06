@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getUserFromRequest } from '@/lib/auth'
 import { ApiResponse } from '@/types'
+import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 
 // Get a specific refund
 export async function GET(
@@ -161,6 +162,17 @@ export async function PATCH(
           status: 'REFUNDED',
         },
       })
+
+      // Dispatch ORDER_REFUNDED webhook (async, don't wait)
+      dispatchWebhook('ORDER_REFUNDED', {
+        orderId: refund.orderId,
+        refundId: refund.id,
+        amount: refund.refundAmount,
+        reason: refund.reason,
+        buyerId: refund.buyerId,
+        sellerId: refund.sellerId,
+        refundedAt: new Date().toISOString()
+      }, refund.sellerId).catch(err => console.error('Failed to dispatch ORDER_REFUNDED webhook:', err))
     }
 
     // Create notification for buyer

@@ -6,7 +6,7 @@ import { ApiResponse } from '@/types'
 // Get a specific refund
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = getUserFromRequest(request)
@@ -18,7 +18,7 @@ export async function GET(
       )
     }
 
-    const refundId = params.id
+    const { id: refundId } = await params
 
     const refund = await prisma.refund.findUnique({
       where: { id: refundId },
@@ -81,7 +81,7 @@ export async function GET(
 // Update refund status (approve/reject by seller)
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = getUserFromRequest(request)
@@ -93,7 +93,7 @@ export async function PATCH(
       )
     }
 
-    const refundId = params.id
+    const { id: refundId } = await params
     const body = await request.json()
     const { status, sellerResponse } = body
 
@@ -194,7 +194,7 @@ export async function PATCH(
 // Delete refund (cancel refund request)
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = getUserFromRequest(request)
@@ -206,7 +206,7 @@ export async function DELETE(
       )
     }
 
-    const refundId = params.id
+    const { id: refundId } = await params
 
     // Get the refund
     const refund = await prisma.refund.findUnique({

@@ -6,7 +6,7 @@ import { ApiResponse } from '@/types'
 // Mark message as read
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = getUserFromRequest(request)
@@ -18,7 +18,7 @@ export async function PATCH(
       )
     }
 
-    const messageId = params.id
+    const { id: messageId } = await params
 
     // Check if message exists and user is the receiver
     const message = await prisma.message.findUnique({
@@ -77,7 +77,7 @@ export async function PATCH(
 // Delete message
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = getUserFromRequest(request)
@@ -89,7 +89,7 @@ export async function DELETE(
       )
     }
 
-    const messageId = params.id
+    const { id: messageId } = await params
 
     // Check if message exists and user is sender or receiver
     const message = await prisma.message.findUnique({

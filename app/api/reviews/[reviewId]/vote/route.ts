@@ -6,7 +6,7 @@ import { ApiResponse } from '@/types'
 // Vote on a review (helpful/not helpful)
 export async function POST(
   request: NextRequest,
-  { params }: { params: { reviewId: string } }
+  { params }: { params: Promise<{ reviewId: string }> }
 ) {
   try {
     const user = getUserFromRequest(request)
@@ -18,7 +18,7 @@ export async function POST(
       )
     }
 
-    const reviewId = params.reviewId
+    const { reviewId } = await params
     const body = await request.json()
     const { isHelpful } = body
 
@@ -106,10 +106,10 @@ export async function POST(
 // Get vote counts for a review
 export async function GET(
   request: NextRequest,
-  { params }: { params: { reviewId: string } }
+  { params }: { params: Promise<{ reviewId: string }> }
 ) {
   try {
-    const reviewId = params.reviewId
+    const { reviewId } = await params
 
     const user = getUserFromRequest(request)
 

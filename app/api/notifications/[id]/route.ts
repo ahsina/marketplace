@@ -6,7 +6,7 @@ import { ApiResponse } from '@/types'
 // Mark notification as read
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = getUserFromRequest(request)
@@ -18,7 +18,7 @@ export async function PATCH(
       )
     }
 
-    const notificationId = params.id
+    const { id: notificationId } = await params
 
     // Check if notification exists and belongs to user
     const notification = await prisma.notification.findUnique({
@@ -63,7 +63,7 @@ export async function PATCH(
 // Delete notification
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = getUserFromRequest(request)
@@ -75,7 +75,7 @@ export async function DELETE(
       )
     }
 
-    const notificationId = params.id
+    const { id: notificationId } = await params
 
     // Check if notification exists and belongs to user
     const notification = await prisma.notification.findUnique({

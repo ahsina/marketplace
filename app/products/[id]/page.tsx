@@ -540,7 +540,7 @@ export default function ProductDetailPage() {
                                   </span>
                                 )}
                               </div>
-                              {user?.userId === product.seller.id && (
+                              {user?.id === product.seller.id && (
                                 <button
                                   onClick={() => handleDeleteResponse(review.id)}
                                   className="text-xs text-red-600 hover:text-red-700"
@@ -554,7 +554,7 @@ export default function ProductDetailPage() {
                         )}
 
                         {/* Seller Response Form */}
-                        {user?.userId === product.seller.id && !review.sellerResponse && (
+                        {user?.id === product.seller.id && !review.sellerResponse && (
                           <div className="mt-4 ml-8">
                             {respondingTo === review.id ? (
                               <div className="space-y-3">

@@ -6,7 +6,7 @@ import { ApiResponse } from '@/types'
 // Update a coupon
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = getUserFromRequest(request)
@@ -18,7 +18,7 @@ export async function PATCH(
       )
     }
 
-    const couponId = params.id
+    const { id: couponId } = await params
     const body = await request.json()
 
     // Check if coupon exists and belongs to seller
@@ -72,7 +72,7 @@ export async function PATCH(
 // Delete a coupon
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = getUserFromRequest(request)
@@ -84,7 +84,7 @@ export async function DELETE(
       )
     }
 
-    const couponId = params.id
+    const { id: couponId } = await params
 
     // Check if coupon exists and belongs to seller
     const coupon = await prisma.coupon.findUnique({

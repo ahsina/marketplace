@@ -217,7 +217,7 @@ export default function SettingsPage() {
                     </div>
 
                     <button
-                      onClick={() => toast.info('Password change feature coming soon!')}
+                      onClick={() => toast('Password change feature coming soon!')}
                       className="bg-gradient-to-r from-purple-600 to-blue-500 text-white px-6 py-3 rounded-lg font-semibold hover:opacity-90 transition"
                     >
                       Update Password
@@ -230,7 +230,7 @@ export default function SettingsPage() {
                       Add an extra layer of security to your account
                     </p>
                     <button
-                      onClick={() => toast.info('2FA feature coming soon!')}
+                      onClick={() => toast('2FA feature coming soon!')}
                       className="bg-white text-gray-900 px-6 py-3 rounded-lg font-semibold border-2 border-gray-300 hover:border-purple-600 transition"
                     >
                       Enable 2FA

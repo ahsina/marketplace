@@ -139,6 +139,7 @@ model Order {
   product         Product     @relation(fields: [productId], references: [id])
 
   transactions    Transaction[]
+  refunds         Refund[]
 
   @@index([buyerId])
   @@index([sellerId])
@@ -322,6 +323,7 @@ model Refund {
   processedAt     DateTime?
 
   orderId         String
+  order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
   buyerId         String
   sellerId        String
 

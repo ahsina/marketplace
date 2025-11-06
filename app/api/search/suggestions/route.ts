@@ -23,8 +23,8 @@ export async function GET(request: NextRequest) {
         where: {
           isActive: true,
           OR: [
-            { title: { contains: query, mode: 'insensitive' } },
-            { description: { contains: query, mode: 'insensitive' } },
+            { title: { contains: query } },
+            { description: { contains: query } },
           ],
         },
         select: {
@@ -46,8 +46,8 @@ export async function GET(request: NextRequest) {
       prisma.category.findMany({
         where: {
           OR: [
-            { name: { contains: query, mode: 'insensitive' } },
-            { description: { contains: query, mode: 'insensitive' } },
+            { name: { contains: query } },
+            { description: { contains: query } },
           ],
         },
         select: {

@@ -6,10 +6,10 @@ import { ApiResponse } from '@/types'
 // Get a specific bundle
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const bundleId = params.id
+    const { id: bundleId } = await params
 
     const bundle = await prisma.bundle.findUnique({
       where: { id: bundleId },
@@ -72,7 +72,7 @@ export async function GET(
 // Update a bundle
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = getUserFromRequest(request)
@@ -84,7 +84,7 @@ export async function PATCH(
       )
     }
 
-    const bundleId = params.id
+    const { id: bundleId } = await params
     const body = await request.json()
 
     // Check if bundle exists and belongs to seller
@@ -159,7 +159,7 @@ export async function PATCH(
 // Delete a bundle
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = getUserFromRequest(request)
@@ -171,7 +171,7 @@ export async function DELETE(
       )
     }
 
-    const bundleId = params.id
+    const { id: bundleId } = await params
 
     // Check if bundle exists and belongs to seller
     const bundle = await prisma.bundle.findUnique({

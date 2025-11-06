@@ -6,7 +6,7 @@ import { ApiResponse } from '@/types'
 // Add or update seller response to a review
 export async function POST(
   request: NextRequest,
-  { params }: { params: { reviewId: string } }
+  { params }: { params: Promise<{ reviewId: string }> }
 ) {
   try {
     const user = getUserFromRequest(request)
@@ -18,7 +18,7 @@ export async function POST(
       )
     }
 
-    const reviewId = params.reviewId
+    const { reviewId } = await params
     const body = await request.json()
     const { response } = body
 
@@ -92,7 +92,7 @@ export async function POST(
 // Delete seller response
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { reviewId: string } }
+  { params }: { params: Promise<{ reviewId: string }> }
 ) {
   try {
     const user = getUserFromRequest(request)
@@ -104,7 +104,7 @@ export async function DELETE(
       )
     }
 
-    const reviewId = params.reviewId
+    const { reviewId } = await params
 
     // Get the review with product info
     const review = await prisma.review.findUnique({

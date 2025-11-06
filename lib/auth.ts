@@ -1,8 +1,8 @@
 import bcrypt from 'bcryptjs'
-import jwt from 'jsonwebtoken'
+import jwt, { Secret, SignOptions } from 'jsonwebtoken'
 import { NextRequest } from 'next/server'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key'
+const JWT_SECRET: Secret = process.env.JWT_SECRET || 'fallback-secret-key'
 
 export interface JWTPayload {
   userId: string
@@ -23,9 +23,9 @@ export async function verifyPassword(
 }
 
 export function generateToken(payload: JWTPayload): string {
-  return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-  })
+  const expiresIn = process.env.JWT_EXPIRES_IN || '7d'
+  // @ts-expect-error - TypeScript has issues with jwt.sign overloads, but this works at runtime
+  return jwt.sign(payload, JWT_SECRET, { expiresIn })
 }
 
 export function verifyToken(token: string): JWTPayload | null {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { ApiResponse } from '@/types'
+import { generateLicenseKey } from '@/lib/license'
 
 // This endpoint receives webhooks from the payment gateway (e.g., PayGate.io)
 // when a payment is confirmed on the blockchain
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
     // Update transaction status
     if (status === 'confirmed' && confirmations >= 1) {
       // Payment confirmed - complete the order
-      await prisma.$transaction([
+      const operations: any[] = [
         // Update transaction
         prisma.transaction.update({
           where: { id: transactionId },
@@ -74,7 +75,39 @@ export async function POST(request: NextRequest) {
             downloadCount: { increment: 1 },
           },
         }),
-      ])
+      ]
+
+      // Generate license key if product requires it
+      if (transaction.order.product.requiresLicense) {
+        const licenseKey = generateLicenseKey()
+        operations.push(
+          prisma.licenseKey.create({
+            data: {
+              key: licenseKey,
+              orderId: transaction.orderId,
+              productId: transaction.order.productId,
+              buyerId: transaction.order.buyerId,
+              maxActivations: 1, // Default to 1 activation
+              status: 'ACTIVE'
+            }
+          })
+        )
+      }
+
+      // Create notification for buyer
+      operations.push(
+        prisma.notification.create({
+          data: {
+            userId: transaction.order.buyerId,
+            type: 'ORDER',
+            title: 'Order Completed',
+            message: `Your order ${transaction.order.orderNumber} has been completed. You can now download your product.`,
+            link: `/orders`
+          }
+        })
+      )
+
+      await prisma.$transaction(operations)
 
       console.log(`✅ Payment confirmed for order ${transaction.order.orderNumber}`)
     } else if (status === 'failed') {

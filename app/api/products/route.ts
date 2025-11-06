@@ -158,6 +158,10 @@ export async function POST(request: NextRequest) {
       thumbnailUrl,
       demoUrl,
       tags,
+      currentVersion,
+      downloadLimit,
+      requiresLicense,
+      drmEnabled,
     } = body
 
     if (!title || !description || !price || !categoryId || !fileUrl || !fileName || !fileSize) {
@@ -181,6 +185,10 @@ export async function POST(request: NextRequest) {
         thumbnailUrl,
         demoUrl,
         tags: tags ? JSON.stringify(tags) : null,
+        currentVersion: currentVersion || '1.0.0',
+        downloadLimit: downloadLimit ? parseInt(downloadLimit) : null,
+        requiresLicense: requiresLicense || false,
+        drmEnabled: drmEnabled || false,
         sellerId: user.userId,
       },
       include: {

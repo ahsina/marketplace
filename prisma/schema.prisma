@@ -99,6 +99,13 @@ model Product {
   isFeatured      Boolean  @default(false)
   downloadCount   Int      @default(0)
   viewCount       Int      @default(0)
+
+  // Digital Product Features
+  currentVersion  String   @default("1.0.0")
+  downloadLimit   Int?     // null = unlimited downloads
+  requiresLicense Boolean  @default(false)
+  drmEnabled      Boolean  @default(false)
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -110,6 +117,8 @@ model Product {
 
   orders          Order[]
   reviews         Review[]
+  versions        ProductVersion[]
+  licenseKeys     LicenseKey[]
 
   @@index([sellerId])
   @@index([categoryId])
@@ -140,6 +149,8 @@ model Order {
 
   transactions    Transaction[]
   refunds         Refund[]
+  licenseKeys     LicenseKey[]
+  downloads       Download[]
 
   @@index([buyerId])
   @@index([sellerId])
@@ -312,6 +323,12 @@ enum RefundStatus {
   COMPLETED
 }
 
+enum LicenseStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
 model Refund {
   id              String        @id @default(cuid())
   reason          String
@@ -331,4 +348,72 @@ model Refund {
   @@index([buyerId])
   @@index([sellerId])
   @@index([status])
+}
+
+model ProductVersion {
+  id              String   @id @default(cuid())
+  version         String
+  fileUrl         String
+  fileName        String
+  fileSize        Int
+  changelog       String?
+  isActive        Boolean  @default(true)
+  downloadCount   Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, version])
+  @@index([productId])
+  @@index([isActive])
+  @@index([createdAt])
+}
+
+model LicenseKey {
+  id              String        @id @default(cuid())
+  key             String        @unique
+  status          LicenseStatus @default(ACTIVE)
+  maxActivations  Int           @default(1)
+  activationCount Int           @default(0)
+  expiresAt       DateTime?
+  activatedAt     DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  orderId         String
+  order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  buyerId         String
+
+  @@index([key])
+  @@index([orderId])
+  @@index([productId])
+  @@index([buyerId])
+  @@index([status])
+}
+
+model Download {
+  id              String   @id @default(cuid())
+  ipAddress       String?
+  userAgent       String?
+  downloadedAt    DateTime @default(now())
+
+  orderId         String
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  productId       String
+  versionId       String?
+
+  buyerId         String
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([buyerId])
+  @@index([downloadedAt])
 }

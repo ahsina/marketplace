@@ -19,11 +19,16 @@ A revolutionary, privacy-focused digital marketplace powered by cryptocurrency p
 
 ### User Features
 - **Authentication System** - Secure JWT-based authentication
-- **Product Marketplace** - Browse, search, and filter products
+- **Product Marketplace** - Browse, search, and filter products by category
 - **Shopping Cart** - Add multiple products before checkout
 - **Reviews & Ratings** - Verified purchase reviews
-- **Seller Dashboard** - Manage your products and sales
+- **Seller Dashboard** - Manage your products and sales with analytics
+- **Seller Profiles** - Public seller pages with stats and product listings
 - **Subscription Tiers** - Free, Basic, Premium, and Enterprise plans
+- **User Settings** - Manage profile, security, notifications, and subscription
+- **Order History** - Track all purchases and downloads
+- **Category Browsing** - Explore products by 6 organized categories
+- **Admin Panel** - Complete platform management dashboard (Admin only)
 
 ### Security & Privacy
 - **End-to-end encryption** for sensitive data

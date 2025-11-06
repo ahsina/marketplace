@@ -1,0 +1,187 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  BUYER
+  SELLER
+  ADMIN
+}
+
+enum SubscriptionTier {
+  FREE
+  BASIC
+  PREMIUM
+  ENTERPRISE
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum TransactionStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+model User {
+  id                String           @id @default(cuid())
+  email             String           @unique
+  username          String           @unique
+  password          String
+  role              UserRole         @default(BUYER)
+  subscriptionTier  SubscriptionTier @default(FREE)
+  subscriptionExpiry DateTime?
+  emailVerified     Boolean          @default(false)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  // Relations
+  productsAsSellerV2  Product[]      @relation("SellerProducts")
+  ordersAsBuyer      Order[]         @relation("BuyerOrders")
+  ordersAsSeller     Order[]         @relation("SellerOrders")
+  reviews            Review[]
+  transactions       Transaction[]
+
+  @@index([email])
+  @@index([username])
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  icon        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+
+  @@index([slug])
+}
+
+model Product {
+  id              String   @id @default(cuid())
+  title           String
+  description     String
+  shortDescription String?
+  price           Float
+  discountPrice   Float?
+  fileUrl         String
+  fileName        String
+  fileSize        Int
+  thumbnailUrl    String?
+  demoUrl         String?
+  tags            String?
+  isActive        Boolean  @default(true)
+  downloadCount   Int      @default(0)
+  viewCount       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  sellerId        String
+  seller          User     @relation("SellerProducts", fields: [sellerId], references: [id], onDelete: Cascade)
+
+  categoryId      String
+  category        Category @relation(fields: [categoryId], references: [id])
+
+  orders          Order[]
+  reviews         Review[]
+
+  @@index([sellerId])
+  @@index([categoryId])
+  @@index([isActive])
+  @@index([createdAt])
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  orderNumber     String      @unique
+  status          OrderStatus @default(PENDING)
+  totalAmount     Float
+  platformFee     Float
+  sellerAmount    Float
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  completedAt     DateTime?
+
+  buyerId         String
+  buyer           User        @relation("BuyerOrders", fields: [buyerId], references: [id])
+
+  sellerId        String
+  seller          User        @relation("SellerOrders", fields: [sellerId], references: [id])
+
+  productId       String
+  product         Product     @relation(fields: [productId], references: [id])
+
+  transactions    Transaction[]
+
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([productId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Transaction {
+  id                String            @id @default(cuid())
+  amount            Float
+  currency          String            @default("USD")
+  cryptoCurrency    String
+  cryptoAmount      Float
+  walletAddress     String
+  transactionHash   String?
+  status            TransactionStatus @default(PENDING)
+  paymentGateway    String            @default("paygate")
+  gatewayResponse   String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  confirmedAt       DateTime?
+
+  userId            String
+  user              User              @relation(fields: [userId], references: [id])
+
+  orderId           String
+  order             Order             @relation(fields: [orderId], references: [id])
+
+  @@index([userId])
+  @@index([orderId])
+  @@index([status])
+  @@index([transactionHash])
+}
+
+model Review {
+  id          String   @id @default(cuid())
+  rating      Int
+  comment     String?
+  isVerified  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([productId])
+  @@index([rating])
+}

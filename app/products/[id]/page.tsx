@@ -64,8 +64,20 @@ export default function ProductDetailPage() {
     if (params.id) {
       fetchProduct()
       fetchRelatedProducts()
+      trackView()
     }
   }, [params.id])
+
+  const trackView = async () => {
+    try {
+      await fetch(`/api/products/${params.id}/view`, {
+        method: 'POST',
+      })
+    } catch (error) {
+      // Silently fail - view tracking is not critical
+      console.error('Error tracking view:', error)
+    }
+  }
 
   const fetchProduct = async () => {
     try {

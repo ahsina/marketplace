@@ -1,9 +1,59 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, Shield, Zap, Lock, TrendingUp, Globe, Star } from 'lucide-react'
+import { ArrowRight, Shield, Zap, Lock, TrendingUp, Globe, Star, ShoppingCart } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
+import { useCartStore } from '@/store/useCartStore'
+import toast from 'react-hot-toast'
+import { formatPrice } from '@/utils/helpers'
+
+interface Product {
+  id: string
+  title: string
+  price: number
+  discountPrice?: number
+  thumbnailUrl?: string
+  averageRating: number
+  reviewCount: number
+  downloadCount: number
+  seller: {
+    username: string
+  }
+  category: {
+    name: string
+  }
+}
 
 export default function Home() {
+  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const { addToCart } = useCartStore()
+
+  useEffect(() => {
+    fetchFeaturedProducts()
+  }, [])
+
+  const fetchFeaturedProducts = async () => {
+    try {
+      const response = await fetch('/api/products/featured?limit=4')
+      const data = await response.json()
+      if (data.success) {
+        setFeaturedProducts(data.data)
+      }
+    } catch (error) {
+      console.error('Error fetching featured products:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleAddToCart = (product: Product) => {
+    addToCart(product as any)
+    toast.success('Added to cart!')
+  }
+
   return (
     <div className="min-h-screen bg-white">
       <Navbar />
@@ -139,6 +189,147 @@ export default function Home() {
               </p>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Featured Products Section */}
+      <section className="py-20 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between mb-12">
+            <div>
+              <h2 className="text-4xl font-bold text-gray-900 mb-2">
+                Featured Products
+              </h2>
+              <p className="text-xl text-gray-600">
+                Handpicked premium digital products from top sellers
+              </p>
+            </div>
+            <Link
+              href="/marketplace"
+              className="text-purple-600 font-semibold hover:text-purple-700 transition flex items-center space-x-2"
+            >
+              <span>View All</span>
+              <ArrowRight className="w-5 h-5" />
+            </Link>
+          </div>
+
+          {isLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[...Array(4)].map((_, i) => (
+                <div
+                  key={i}
+                  className="bg-white rounded-lg shadow animate-pulse"
+                >
+                  <div className="h-48 bg-gray-200 rounded-t-lg" />
+                  <div className="p-4 space-y-3">
+                    <div className="h-4 bg-gray-200 rounded w-3/4" />
+                    <div className="h-4 bg-gray-200 rounded w-1/2" />
+                    <div className="h-4 bg-gray-200 rounded w-full" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : featuredProducts.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-lg">
+              <Star className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-600">No featured products yet</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {featuredProducts.map((product) => (
+                <div
+                  key={product.id}
+                  className="bg-white rounded-lg shadow hover:shadow-xl transition group"
+                >
+                  <Link href={`/products/${product.id}`}>
+                    <div className="relative h-48 bg-gradient-to-br from-purple-100 to-blue-100 rounded-t-lg overflow-hidden">
+                      {product.thumbnailUrl ? (
+                        <img
+                          src={product.thumbnailUrl}
+                          alt={product.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition"
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center h-full">
+                          <div className="text-6xl">📦</div>
+                        </div>
+                      )}
+                      <div className="absolute top-2 left-2 bg-yellow-500 text-white px-3 py-1 rounded-full text-xs font-semibold flex items-center space-x-1">
+                        <Star className="w-3 h-3 fill-current" />
+                        <span>Featured</span>
+                      </div>
+                      {product.discountPrice && (
+                        <div className="absolute top-2 right-2 bg-red-500 text-white px-2 py-1 rounded text-sm font-semibold">
+                          {Math.round(
+                            ((product.price - product.discountPrice) / product.price) * 100
+                          )}
+                          % OFF
+                        </div>
+                      )}
+                    </div>
+                  </Link>
+
+                  <div className="p-4">
+                    <div className="text-xs text-purple-600 font-medium mb-1">
+                      {product.category.name}
+                    </div>
+
+                    <Link href={`/products/${product.id}`}>
+                      <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2 hover:text-purple-600 transition">
+                        {product.title}
+                      </h3>
+                    </Link>
+
+                    <div className="flex items-center space-x-2 mb-3">
+                      <div className="flex items-center">
+                        <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                        <span className="text-sm text-gray-600 ml-1">
+                          {product.averageRating > 0
+                            ? product.averageRating.toFixed(1)
+                            : 'New'}
+                        </span>
+                      </div>
+                      <span className="text-gray-300">•</span>
+                      <span className="text-sm text-gray-600">
+                        {product.downloadCount} sales
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        {product.discountPrice ? (
+                          <>
+                            <span className="text-lg font-bold text-gray-900">
+                              {formatPrice(product.discountPrice)}
+                            </span>
+                            <span className="text-sm text-gray-400 line-through ml-2">
+                              {formatPrice(product.price)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-lg font-bold text-gray-900">
+                            {formatPrice(product.price)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleAddToCart(product)}
+                      className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white py-2 rounded-lg font-medium hover:opacity-90 transition flex items-center justify-center space-x-2"
+                    >
+                      <ShoppingCart className="w-4 h-4" />
+                      <span>Add to Cart</span>
+                    </button>
+
+                    <div className="mt-2 text-xs text-gray-500 text-center">
+                      by {product.seller.username}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 

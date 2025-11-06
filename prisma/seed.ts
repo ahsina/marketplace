@@ -99,6 +99,7 @@ async function main() {
       role: 'SELLER',
       subscriptionTier: 'PREMIUM',
       emailVerified: true,
+      isVerifiedSeller: true,
     },
   })
 
@@ -145,6 +146,7 @@ async function main() {
       thumbnailUrl: 'https://via.placeholder.com/400x300/667eea/ffffff?text=WordPress+Theme',
       categoryId: categories[2].id, // Templates
       sellerId: seller1.id,
+      isFeatured: true,
     },
     {
       title: 'React Admin Dashboard Template',
@@ -170,6 +172,7 @@ async function main() {
       thumbnailUrl: 'https://via.placeholder.com/400x300/f093fb/ffffff?text=Logo+Pack',
       categoryId: categories[1].id, // Digital Art
       sellerId: seller2.id,
+      isFeatured: true,
     },
     {
       title: 'Complete Web Development Bootcamp 2024',
@@ -182,6 +185,7 @@ async function main() {
       fileSize: 1073741824, // 1GB
       categoryId: categories[3].id, // Education
       sellerId: seller1.id,
+      isFeatured: true,
     },
     {
       title: 'Figma UI Kit - Mobile App Design System',
@@ -194,6 +198,7 @@ async function main() {
       thumbnailUrl: 'https://via.placeholder.com/400x300/4facfe/ffffff?text=Figma+UI+Kit',
       categoryId: categories[1].id, // Digital Art
       sellerId: seller2.id,
+      isFeatured: true,
     },
     {
       title: 'Royalty-Free Music Pack - 50 Tracks',

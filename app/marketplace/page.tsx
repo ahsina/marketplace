@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Search, Filter, Star, ShoppingCart, X, SlidersHorizontal } from 'lucide-react'
+import { Search, Filter, Star, ShoppingCart, X, SlidersHorizontal, Scale } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import { useCartStore } from '@/store/useCartStore'
+import { useComparisonStore } from '@/store/useComparisonStore'
 import toast from 'react-hot-toast'
 import { formatPrice } from '@/utils/helpers'
 
@@ -52,6 +53,7 @@ export default function MarketplacePage() {
   const [order, setOrder] = useState('desc')
 
   const { addToCart } = useCartStore()
+  const { addToComparison, isInComparison, getTotalItems } = useComparisonStore()
 
   useEffect(() => {
     fetchCategories()
@@ -113,6 +115,19 @@ export default function MarketplacePage() {
   const handleAddToCart = (product: Product) => {
     addToCart(product as any)
     toast.success('Added to cart!')
+  }
+
+  const handleAddToComparison = (product: Product) => {
+    if (getTotalItems() >= 4) {
+      toast.error('You can only compare up to 4 products')
+      return
+    }
+    if (isInComparison(product.id)) {
+      toast.error('Product already in comparison')
+      return
+    }
+    addToComparison(product as any)
+    toast.success('Added to comparison!')
   }
 
   const toggleCategory = (categoryId: string) => {
@@ -472,13 +487,28 @@ export default function MarketplacePage() {
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => handleAddToCart(product)}
-                    className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white py-2 rounded-lg font-medium hover:opacity-90 transition flex items-center justify-center space-x-2"
-                  >
-                    <ShoppingCart className="w-4 h-4" />
-                    <span>Add to Cart</span>
-                  </button>
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => handleAddToCart(product)}
+                      className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white py-2 rounded-lg font-medium hover:opacity-90 transition flex items-center justify-center space-x-2"
+                    >
+                      <ShoppingCart className="w-4 h-4" />
+                      <span>Add to Cart</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleAddToComparison(product)}
+                      disabled={isInComparison(product.id)}
+                      className={`w-full py-2 rounded-lg font-medium transition flex items-center justify-center space-x-2 ${
+                        isInComparison(product.id)
+                          ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                          : 'bg-white text-gray-700 border border-gray-300 hover:border-purple-600 hover:text-purple-600'
+                      }`}
+                    >
+                      <Scale className="w-4 h-4" />
+                      <span>{isInComparison(product.id) ? 'In Comparison' : 'Compare'}</span>
+                    </button>
+                  </div>
 
                   <div className="mt-2 text-xs text-gray-500 text-center">
                     by {product.seller.username}
@@ -489,6 +519,24 @@ export default function MarketplacePage() {
           </div>
         )}
       </div>
+
+      {/* Floating Compare Button */}
+      {getTotalItems() > 0 && (
+        <div className="fixed bottom-8 right-8 z-40">
+          <Link
+            href="/compare"
+            className="bg-gradient-to-r from-purple-600 to-blue-500 text-white px-6 py-4 rounded-full shadow-2xl hover:shadow-3xl transition flex items-center space-x-3 group"
+          >
+            <div className="relative">
+              <Scale className="w-6 h-6" />
+              <span className="absolute -top-2 -right-2 bg-yellow-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                {getTotalItems()}
+              </span>
+            </div>
+            <span className="font-semibold">Compare Products</span>
+          </Link>
+        </div>
+      )}
 
       <Footer />
     </div>

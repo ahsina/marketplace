@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { hashPassword, generateToken } from '@/lib/auth'
 import { ApiResponse } from '@/types'
+import { nanoid } from 'nanoid'
+import { sendEmail, getWelcomeEmail, getEmailVerificationEmail } from '@/lib/email'
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,12 +40,19 @@ export async function POST(request: NextRequest) {
     // Hash password
     const hashedPassword = await hashPassword(password)
 
+    // Generate verification token (valid for 24 hours)
+    const verificationToken = nanoid(64)
+    const verificationExpiry = new Date()
+    verificationExpiry.setHours(verificationExpiry.getHours() + 24)
+
     // Create user
     const user = await prisma.user.create({
       data: {
         email,
         username,
         password: hashedPassword,
+        emailVerificationToken: verificationToken,
+        emailVerificationExpiry: verificationExpiry,
       },
       select: {
         id: true,
@@ -51,6 +60,7 @@ export async function POST(request: NextRequest) {
         username: true,
         role: true,
         subscriptionTier: true,
+        emailVerified: true,
         createdAt: true,
       },
     })
@@ -63,11 +73,21 @@ export async function POST(request: NextRequest) {
       role: user.role,
     })
 
+    // Send welcome email (async, don't wait)
+    sendEmail(getWelcomeEmail(user.username, user.email)).catch(err =>
+      console.error('Failed to send welcome email:', err)
+    )
+
+    // Send verification email (async, don't wait)
+    sendEmail(getEmailVerificationEmail(user.email, user.username, verificationToken)).catch(err =>
+      console.error('Failed to send verification email:', err)
+    )
+
     return NextResponse.json<ApiResponse>(
       {
         success: true,
         data: { user, token },
-        message: 'Account created successfully',
+        message: 'Account created successfully. Please check your email to verify your account.',
       },
       { status: 201 }
     )

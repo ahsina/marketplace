@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { verifyPassword, generateToken } from '@/lib/auth'
 import { ApiResponse } from '@/types'
+import speakeasy from 'speakeasy'
 
 export async function POST(request: NextRequest) {
   try {
-    const { emailOrUsername, password } = await request.json()
+    const { emailOrUsername, password, twoFactorCode } = await request.json()
 
     // Validation
     if (!emailOrUsername || !password) {
@@ -39,6 +40,35 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Check if 2FA is enabled
+    if (user.twoFactorEnabled && user.twoFactorSecret) {
+      if (!twoFactorCode) {
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: '2FA code required',
+            data: { requires2FA: true }
+          },
+          { status: 403 }
+        )
+      }
+
+      // Verify 2FA code
+      const verified = speakeasy.totp.verify({
+        secret: user.twoFactorSecret,
+        encoding: 'base32',
+        token: twoFactorCode,
+        window: 2
+      })
+
+      if (!verified) {
+        return NextResponse.json<ApiResponse>(
+          { success: false, error: 'Invalid 2FA code' },
+          { status: 401 }
+        )
+      }
+    }
+
     // Generate token
     const token = generateToken({
       userId: user.id,
@@ -47,13 +77,13 @@ export async function POST(request: NextRequest) {
       role: user.role,
     })
 
-    // Return user without password
-    const { password: _, ...userWithoutPassword } = user
+    // Return user without password and 2FA secret
+    const { password: _, twoFactorSecret: __, ...userWithoutSensitiveData } = user
 
     return NextResponse.json<ApiResponse>(
       {
         success: true,
-        data: { user: userWithoutPassword, token },
+        data: { user: userWithoutSensitiveData, token },
         message: 'Logged in successfully',
       },
       { status: 200 }

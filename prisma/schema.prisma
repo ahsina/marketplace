@@ -168,6 +168,7 @@ model Order {
   refunds         Refund[]
   licenseKeys     LicenseKey[]
   downloads       Download[]
+  disputes        Dispute[]
 
   @@index([buyerId])
   @@index([sellerId])
@@ -197,10 +198,44 @@ model Transaction {
   orderId           String
   order             Order             @relation(fields: [orderId], references: [id])
 
+  paymentAttempts   PaymentAttempt[]
+
   @@index([userId])
   @@index([orderId])
   @@index([status])
   @@index([transactionHash])
+}
+
+enum PaymentAttemptStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+  TIMEOUT
+}
+
+model PaymentAttempt {
+  id              String              @id @default(cuid())
+  transactionId   String
+  transaction     Transaction         @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  attemptNumber   Int
+  status          PaymentAttemptStatus @default(PENDING)
+  errorCode       String?
+  errorMessage    String?
+  gatewayResponse String?             // JSON
+
+  retryAfter      DateTime?           // When to retry next
+  retryDelay      Int?                // Delay in seconds
+
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  completedAt     DateTime?
+
+  @@index([transactionId])
+  @@index([status])
+  @@index([retryAfter])
+  @@index([attemptNumber])
 }
 
 model Review {
@@ -733,4 +768,114 @@ model FraudAlert {
   @@index([riskLevel])
   @@index([isResolved])
   @@index([createdAt])
+}
+
+enum DisputeStatus {
+  OPEN
+  IN_REVIEW
+  AWAITING_RESPONSE
+  RESOLVED
+  ESCALATED
+  CLOSED
+}
+
+enum DisputeReason {
+  PRODUCT_NOT_AS_DESCRIBED
+  FILE_CORRUPTED
+  WRONG_PRODUCT
+  NOT_RECEIVED
+  SELLER_NOT_RESPONDING
+  REFUND_NOT_PROCESSED
+  LICENSE_ISSUE
+  OTHER
+}
+
+enum DisputeOutcome {
+  BUYER_FAVOR
+  SELLER_FAVOR
+  PARTIAL_REFUND
+  FULL_REFUND
+  NO_REFUND
+  REPLACE_PRODUCT
+}
+
+model Dispute {
+  id          String         @id @default(cuid())
+  orderId     String
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  buyerId     String
+  sellerId    String
+
+  reason      DisputeReason
+  description String
+  status      DisputeStatus  @default(OPEN)
+  outcome     DisputeOutcome?
+
+  // Admin assignment
+  assignedTo  String?        // Admin user ID
+  assignedAt  DateTime?
+
+  // Resolution
+  resolution  String?
+  resolvedAt  DateTime?
+  resolvedBy  String?        // Admin user ID
+
+  // Evidence
+  buyerEvidence  String?     // JSON array of evidence URLs/text
+  sellerEvidence String?     // JSON array of evidence URLs/text
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  messages    DisputeMessage[]
+
+  @@index([orderId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+  @@index([assignedTo])
+  @@index([createdAt])
+}
+
+model DisputeMessage {
+  id          String   @id @default(cuid())
+  disputeId   String
+  dispute     Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  senderId    String
+  message     String
+  isInternal  Boolean  @default(false) // Admin-only notes
+  attachments String?  // JSON array of attachment URLs
+
+  createdAt   DateTime @default(now())
+
+  @@index([disputeId])
+  @@index([senderId])
+  @@index([createdAt])
+}
+
+enum IdempotencyStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model IdempotencyKey {
+  id          String            @id @default(cuid())
+  key         String            @unique
+  userId      String
+  endpoint    String
+  requestBody String?           // JSON of the request body
+
+  status      IdempotencyStatus @default(PROCESSING)
+  response    String?           // JSON of the response
+  statusCode  Int?
+
+  createdAt   DateTime          @default(now())
+  expiresAt   DateTime
+
+  @@index([key])
+  @@index([userId])
+  @@index([expiresAt])
 }

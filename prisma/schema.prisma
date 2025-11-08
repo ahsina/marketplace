@@ -879,3 +879,259 @@ model IdempotencyKey {
   @@index([userId])
   @@index([expiresAt])
 }
+
+// ==============================================
+// SOCIAL FEATURES
+// ==============================================
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String   // User who is following
+  followingId String   // User being followed (usually a seller)
+
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+  @@index([createdAt])
+}
+
+model ProductLike {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId])
+  @@index([createdAt])
+}
+
+model ProductShare {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String
+  platform  String   // 'twitter', 'facebook', 'linkedin', 'email', 'copy'
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([productId])
+  @@index([platform])
+  @@index([createdAt])
+}
+
+model Wishlist {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId])
+  @@index([createdAt])
+}
+
+model Collection {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  isPublic    Boolean  @default(false)
+  productIds  String   // JSON array of product IDs
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([isPublic])
+  @@index([createdAt])
+}
+
+// ==============================================
+// MARKETING TOOLS
+// ==============================================
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  PAUSED
+  CANCELLED
+}
+
+enum CampaignType {
+  PROMOTIONAL
+  NEWSLETTER
+  ANNOUNCEMENT
+  TRANSACTIONAL
+}
+
+model EmailCampaign {
+  id           String         @id @default(cuid())
+  name         String
+  subject      String
+  htmlContent  String
+  textContent  String?
+  type         CampaignType   @default(PROMOTIONAL)
+  status       CampaignStatus @default(DRAFT)
+
+  // Targeting
+  targetRole   String?        // 'BUYER', 'SELLER', 'ALL'
+  targetTier   String?        // Subscription tier filter
+  recipientIds String?        // JSON array of specific user IDs
+
+  // Scheduling
+  scheduledFor DateTime?
+  sentAt       DateTime?
+
+  // Stats
+  totalRecipients Int @default(0)
+  sent            Int @default(0)
+  delivered       Int @default(0)
+  opened          Int @default(0)
+  clicked         Int @default(0)
+  bounced         Int @default(0)
+  unsubscribed    Int @default(0)
+
+  createdBy    String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([status])
+  @@index([type])
+  @@index([scheduledFor])
+  @@index([createdBy])
+  @@index([createdAt])
+}
+
+enum PromotionType {
+  PERCENTAGE_OFF
+  FIXED_AMOUNT_OFF
+  BUY_ONE_GET_ONE
+  FREE_SHIPPING
+  BUNDLE_DEAL
+}
+
+model Promotion {
+  id          String        @id @default(cuid())
+  name        String
+  description String
+  type        PromotionType
+
+  // Discount details
+  discountPercentage Float?
+  discountAmount     Float?
+  minimumPurchase    Float?
+
+  // Product targeting
+  productIds   String?      // JSON array - null = all products
+  categoryIds  String?      // JSON array - null = all categories
+  sellerIds    String?      // JSON array - null = all sellers
+
+  // Usage limits
+  maxUsesPerUser    Int?
+  maxTotalUses      Int?
+  currentUses       Int       @default(0)
+
+  // Active period
+  startDate    DateTime
+  endDate      DateTime
+  isActive     Boolean      @default(true)
+
+  createdBy    String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([isActive])
+  @@index([startDate])
+  @@index([endDate])
+  @@index([createdBy])
+  @@index([type])
+}
+
+model PromotionUsage {
+  id          String   @id @default(cuid())
+  promotionId String
+  userId      String
+  orderId     String?
+
+  discount    Float
+  usedAt      DateTime @default(now())
+
+  @@index([promotionId])
+  @@index([userId])
+  @@index([orderId])
+  @@index([usedAt])
+}
+
+model NewsletterSubscription {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  userId      String?  // null if not registered user
+  isActive    Boolean  @default(true)
+
+  subscribedAt   DateTime @default(now())
+  unsubscribedAt DateTime?
+
+  @@index([email])
+  @@index([userId])
+  @@index([isActive])
+}
+
+// ==============================================
+// ESCROW SYSTEM
+// ==============================================
+
+enum EscrowStatus {
+  CREATED
+  FUNDED
+  GOODS_DELIVERED
+  COMPLETED
+  DISPUTED
+  REFUNDED
+  CANCELLED
+}
+
+model EscrowTransaction {
+  id            String       @id @default(cuid())
+  orderId       String       @unique
+
+  buyerId       String
+  sellerId      String
+  amount        Float
+  platformFee   Float
+
+  status        EscrowStatus @default(CREATED)
+
+  // Blockchain details (for crypto escrow)
+  escrowAddress String?      // Smart contract or multi-sig wallet address
+  txHash        String?      // Transaction hash for funding
+  releaseHash   String?      // Transaction hash for release
+
+  // Timeframes
+  fundedAt      DateTime?
+  deliveredAt   DateTime?
+  releasedAt    DateTime?
+  expiresAt     DateTime?
+
+  // Dispute
+  disputeId     String?
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([orderId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+  @@index([createdAt])
+}

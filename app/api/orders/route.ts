@@ -4,8 +4,10 @@ import { getUserFromRequest } from '@/lib/auth'
 import { ApiResponse } from '@/types'
 import { generateOrderNumber, calculatePlatformFee, calculateSellerAmount } from '@/utils/helpers'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
+import { withRateLimit } from '@/lib/with-rate-limit'
+import { RateLimits } from '@/lib/rate-limit'
 
-export async function POST(request: NextRequest) {
+async function createOrderHandler(request: NextRequest) {
   try {
     const user = getUserFromRequest(request)
 
@@ -137,6 +139,12 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+// Export POST with rate limiting: 10 requests per minute
+export const POST = withRateLimit(
+  { ...RateLimits.PAYMENT, namespace: 'orders:create' },
+  createOrderHandler
+)
 
 export async function GET(request: NextRequest) {
   try {

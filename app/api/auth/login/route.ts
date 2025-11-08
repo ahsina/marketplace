@@ -3,8 +3,10 @@ import { prisma } from '@/lib/prisma'
 import { verifyPassword, generateToken } from '@/lib/auth'
 import { ApiResponse } from '@/types'
 import speakeasy from 'speakeasy'
+import { withRateLimit } from '@/lib/with-rate-limit'
+import { RateLimits } from '@/lib/rate-limit'
 
-export async function POST(request: NextRequest) {
+async function loginHandler(request: NextRequest) {
   try {
     const { emailOrUsername, password, twoFactorCode } = await request.json()
 
@@ -96,3 +98,9 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+// Export with rate limiting: 5 requests per 15 minutes
+export const POST = withRateLimit(
+  { ...RateLimits.AUTH, namespace: 'auth:login' },
+  loginHandler
+)

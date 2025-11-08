@@ -4,8 +4,10 @@ import { hashPassword, generateToken } from '@/lib/auth'
 import { ApiResponse } from '@/types'
 import { nanoid } from 'nanoid'
 import { sendEmail, getWelcomeEmail, getEmailVerificationEmail } from '@/lib/email'
+import { withRateLimit } from '@/lib/with-rate-limit'
+import { RateLimits } from '@/lib/rate-limit'
 
-export async function POST(request: NextRequest) {
+async function registerHandler(request: NextRequest) {
   try {
     const { email, username, password, referralCode } = await request.json()
 
@@ -130,3 +132,9 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+// Export with rate limiting: 3 requests per hour (anti-spam)
+export const POST = withRateLimit(
+  { ...RateLimits.REGISTER, namespace: 'auth:register' },
+  registerHandler
+)

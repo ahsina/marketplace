@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth'
 import { uploadFile } from '@/lib/cloudinary'
+import { withRateLimit } from '@/lib/with-rate-limit'
+import { RateLimits } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 // POST /api/upload - Upload file to Cloudinary
-export async function POST(request: NextRequest) {
+async function uploadHandler(request: NextRequest) {
   try {
     const token = request.headers.get('Authorization')?.split(' ')[1]
 
@@ -75,3 +77,9 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+// Export POST with rate limiting: 20 requests per hour
+export const POST = withRateLimit(
+  { ...RateLimits.UPLOAD, namespace: 'upload' },
+  uploadHandler
+)

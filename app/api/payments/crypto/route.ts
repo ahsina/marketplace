@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getUserFromRequest } from '@/lib/auth'
 import { ApiResponse } from '@/types'
+import { withRateLimit } from '@/lib/with-rate-limit'
+import { RateLimits } from '@/lib/rate-limit'
 
 // Supported cryptocurrencies with current exchange rates (mock data)
 const CRYPTO_RATES: Record<string, number> = {
@@ -19,7 +21,7 @@ const PLATFORM_WALLETS: Record<string, string> = {
   USDC: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
 }
 
-export async function POST(request: NextRequest) {
+async function createPaymentHandler(request: NextRequest) {
   try {
     const user = getUserFromRequest(request)
 
@@ -126,6 +128,12 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+// Export POST with rate limiting: 10 requests per minute
+export const POST = withRateLimit(
+  { ...RateLimits.PAYMENT, namespace: 'payments:crypto' },
+  createPaymentHandler
+)
 
 // Get payment status
 export async function GET(request: NextRequest) {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getUserFromRequest } from '@/lib/auth'
 import { ApiResponse } from '@/types'
-import { withRateLimit } from '@/lib/with-rate-limit'
+import { withCsrfAndRateLimit } from '@/lib/with-csrf'
 import { RateLimits } from '@/lib/rate-limit'
 
 // Supported cryptocurrencies with current exchange rates (mock data)
@@ -129,8 +129,8 @@ async function createPaymentHandler(request: NextRequest) {
   }
 }
 
-// Export POST with rate limiting: 10 requests per minute
-export const POST = withRateLimit(
+// Export POST with CSRF protection and rate limiting: 10 requests per minute
+export const POST = withCsrfAndRateLimit(
   { ...RateLimits.PAYMENT, namespace: 'payments:crypto' },
   createPaymentHandler
 )

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getUserFromRequest } from '@/lib/auth'
 import { ApiResponse, PaginatedResponse } from '@/types'
+import { withCsrf } from '@/lib/with-csrf'
 
 export async function GET(request: NextRequest) {
   try {
@@ -133,7 +134,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function createProductHandler(request: NextRequest) {
   try {
     const user = getUserFromRequest(request)
 
@@ -218,3 +219,6 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+// Export POST with CSRF protection
+export const POST = withCsrf(createProductHandler)

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth'
 import { uploadFile } from '@/lib/cloudinary'
-import { withRateLimit } from '@/lib/with-rate-limit'
+import { withCsrfAndRateLimit } from '@/lib/with-csrf'
 import { RateLimits } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -78,8 +78,8 @@ async function uploadHandler(request: NextRequest) {
   }
 }
 
-// Export POST with rate limiting: 20 requests per hour
-export const POST = withRateLimit(
+// Export POST with CSRF protection and rate limiting: 20 requests per hour
+export const POST = withCsrfAndRateLimit(
   { ...RateLimits.UPLOAD, namespace: 'upload' },
   uploadHandler
 )

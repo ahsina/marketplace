@@ -1,343 +1,322 @@
 /**
- * PayGate.io Integration Service
+ * PayGate.to Integration
  *
- * Real implementation for crypto payment processing
- * Supports BTC, ETH, USDT, USDC
+ * PayGate.to is a fiat-to-crypto payment gateway that allows customers to pay with:
+ * - Credit/Debit Cards
+ * - Apple Pay / Google Pay
+ * - Bank Transfers
+ *
+ * Merchants receive instant USDC payouts on Polygon network.
+ *
+ * API Documentation: https://documenter.getpostman.com/view/14826208/2sA3Bj9aBi
  */
 
-import crypto from 'crypto'
+// PayGate.to API Configuration
+const PAYGATE_API_BASE = process.env.PAYGATE_BASE_URL || 'https://api.paygate.to'
+const PAYGATE_CHECKOUT_BASE = process.env.PAYGATE_CHECKOUT_URL || 'https://checkout.paygate.to'
 
-export interface PayGateConfig {
-  apiKey: string
-  apiSecret: string
-  webhookSecret: string
-  baseUrl: string
-  network: 'mainnet' | 'testnet'
+// Merchant Configuration
+const MERCHANT_USDC_ADDRESS = process.env.PAYGATE_MERCHANT_WALLET || process.env.PLATFORM_WALLET_ADDRESS || ''
+
+if (!MERCHANT_USDC_ADDRESS) {
+  console.warn('⚠️  PAYGATE_MERCHANT_WALLET not configured. PayGate.to payments will fail.')
 }
 
-export interface CreateInvoiceRequest {
+/**
+ * PayGate Wallet Response
+ */
+export interface PayGateWallet {
+  addressIn: string // Encrypted wallet address for payments
+  polygonAddressIn: string // Polygon address
+  callbackUrl: string
+  ipnToken: string // Token for tracking payment status
+}
+
+/**
+ * Payment Link Configuration
+ */
+export interface PaymentLinkConfig {
   orderId: string
   amount: number // USD amount
-  currency: 'BTC' | 'ETH' | 'USDT' | 'USDC'
-  description?: string
-  buyerEmail?: string
-  callbackUrl?: string
-  returnUrl?: string
-  expiryMinutes?: number
+  currency?: string // USD, EUR, CAD, etc.
+  customerEmail?: string
+  provider?: 'moonpay' | 'banxa' | 'transak' | 'stripe' // Specific provider
+  multiProvider?: boolean // Show provider selection
+  customDomain?: string // White-label domain
 }
 
-export interface PayGateInvoice {
-  id: string
-  orderId: string
-  status: 'pending' | 'processing' | 'confirmed' | 'completed' | 'expired' | 'failed'
+/**
+ * Payment Link Response
+ */
+export interface PaymentLink {
+  url: string // Payment page URL
+  encryptedAddress: string
+  ipnToken: string
   amount: number
   currency: string
-  cryptoAmount: number
-  cryptoCurrency: string
-  paymentAddress: string
-  qrCode: string
-  expiresAt: string
-  createdAt: string
-  confirmedAt?: string
-  confirmations: number
-  requiredConfirmations: number
-  txHash?: string
 }
 
-export interface WebhookPayload {
-  event: 'invoice.created' | 'invoice.processing' | 'invoice.confirmed' | 'invoice.completed' | 'invoice.expired'
-  invoiceId: string
+/**
+ * Payment Status Response
+ */
+export interface PaymentStatus {
+  status: 'paid' | 'unpaid'
+  valueCoin: string // USDC amount received
+  txidOut: string // Payout transaction hash
+  coin: 'polygon_usdc' | 'polygon_usdt'
+}
+
+/**
+ * Callback Payload (sent via GET request)
+ */
+export interface PayGateCallback {
   orderId: string
-  status: string
-  txHash?: string
-  confirmations?: number
-  timestamp: string
+  valueCoin: string // Actual USDC received
+  coin: 'polygon_usdc' | 'polygon_usdt'
+  txidIn: string // Provider to wallet tx
+  txidOut: string // Wallet to merchant tx
+  addressIn: string // Decrypted wallet address
+  [key: string]: string // Any additional params
 }
 
+/**
+ * Currency Conversion Response
+ */
+export interface ConversionResult {
+  status: 'success' | 'error'
+  valueCoin: string
+  exchangeRate: string
+}
+
+/**
+ * PayGate.to Service
+ */
 class PayGateService {
-  private config: PayGateConfig
+  private apiBase: string
+  private checkoutBase: string
+  private merchantWallet: string
 
-  constructor(config: PayGateConfig) {
-    this.config = config
+  constructor() {
+    this.apiBase = PAYGATE_API_BASE
+    this.checkoutBase = PAYGATE_CHECKOUT_BASE
+    this.merchantWallet = MERCHANT_USDC_ADDRESS
   }
 
   /**
-   * Create a payment invoice
+   * Create a payment wallet for an order
    */
-  async createInvoice(request: CreateInvoiceRequest): Promise<PayGateInvoice> {
+  async createWallet(orderId: string): Promise<PayGateWallet> {
+    const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/paygate-callback`
+
+    const params = new URLSearchParams({
+      address: this.merchantWallet,
+      callback: callbackUrl + `?orderId=${orderId}`,
+    })
+
+    const url = `${this.apiBase}/control/wallet.php?${params.toString()}`
+
     try {
-      const endpoint = `${this.config.baseUrl}/v1/invoices`
-
-      const payload = {
-        order_id: request.orderId,
-        amount: request.amount,
-        currency: 'USD',
-        crypto_currency: request.currency,
-        description: request.description || `Order ${request.orderId}`,
-        buyer_email: request.buyerEmail,
-        callback_url: request.callbackUrl || `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/webhook`,
-        return_url: request.returnUrl || `${process.env.NEXT_PUBLIC_APP_URL}/orders/${request.orderId}`,
-        expiry_minutes: request.expiryMinutes || 60
-      }
-
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify(payload)
-      })
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Unknown error' }))
-        throw new Error(`PayGate API error: ${error.message || response.statusText}`)
-      }
-
-      const data = await response.json()
-
-      return this.mapInvoiceResponse(data)
-    } catch (error) {
-      console.error('PayGate createInvoice error:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Get invoice status
-   */
-  async getInvoice(invoiceId: string): Promise<PayGateInvoice> {
-    try {
-      const endpoint = `${this.config.baseUrl}/v1/invoices/${invoiceId}`
-
-      const response = await fetch(endpoint, {
+      const response = await fetch(url, {
         method: 'GET',
-        headers: this.getHeaders()
+        headers: {
+          'Accept': 'application/json',
+        },
       })
 
       if (!response.ok) {
-        throw new Error(`PayGate API error: ${response.statusText}`)
+        throw new Error(`PayGate API error: ${response.status} ${response.statusText}`)
       }
 
       const data = await response.json()
 
-      return this.mapInvoiceResponse(data)
+      return {
+        addressIn: data.address_in,
+        polygonAddressIn: data.polygon_address_in,
+        callbackUrl: data.callback_url,
+        ipnToken: data.ipn_token,
+      }
     } catch (error) {
-      console.error('PayGate getInvoice error:', error)
-      throw error
+      console.error('Failed to create PayGate wallet:', error)
+      throw new Error('Failed to create payment wallet')
     }
   }
 
   /**
-   * Get invoice by order ID
+   * Generate a payment link for customer checkout
    */
-  async getInvoiceByOrderId(orderId: string): Promise<PayGateInvoice | null> {
-    try {
-      const endpoint = `${this.config.baseUrl}/v1/invoices?order_id=${orderId}`
+  async createPaymentLink(config: PaymentLinkConfig): Promise<PaymentLink> {
+    // First create a wallet
+    const wallet = await this.createWallet(config.orderId)
 
-      const response = await fetch(endpoint, {
+    const currency = config.currency || 'USD'
+    const amount = config.amount.toFixed(2)
+
+    let paymentUrl: string
+
+    if (config.multiProvider || !config.provider) {
+      // Multi-provider selection page
+      const params = new URLSearchParams({
+        address: wallet.addressIn,
+        amount: amount,
+        currency: currency,
+      })
+
+      if (config.customerEmail) {
+        params.append('email', config.customerEmail)
+      }
+
+      if (config.customDomain) {
+        params.append('domain', config.customDomain)
+      }
+
+      paymentUrl = `${this.checkoutBase}/pay.php?${params.toString()}`
+    } else {
+      // Specific provider checkout
+      const params = new URLSearchParams({
+        address: wallet.addressIn,
+        amount: amount,
+        provider: config.provider,
+        currency: currency,
+      })
+
+      if (config.customerEmail) {
+        params.append('email', config.customerEmail)
+      }
+
+      paymentUrl = `${this.checkoutBase}/process-payment.php?${params.toString()}`
+    }
+
+    return {
+      url: paymentUrl,
+      encryptedAddress: wallet.addressIn,
+      ipnToken: wallet.ipnToken,
+      amount: config.amount,
+      currency: currency,
+    }
+  }
+
+  /**
+   * Check payment status using IPN token
+   */
+  async checkPaymentStatus(ipnToken: string): Promise<PaymentStatus> {
+    const params = new URLSearchParams({
+      ipn_token: ipnToken,
+    })
+
+    const url = `${this.apiBase}/control/payment-status.php?${params.toString()}`
+
+    try {
+      const response = await fetch(url, {
         method: 'GET',
-        headers: this.getHeaders()
+        headers: {
+          'Accept': 'application/json',
+        },
       })
 
       if (!response.ok) {
-        return null
+        throw new Error(`PayGate API error: ${response.status}`)
       }
 
       const data = await response.json()
 
-      if (data.invoices && data.invoices.length > 0) {
-        return this.mapInvoiceResponse(data.invoices[0])
+      return {
+        status: data.status,
+        valueCoin: data.value_coin,
+        txidOut: data.txid_out,
+        coin: data.coin,
       }
-
-      return null
     } catch (error) {
-      console.error('PayGate getInvoiceByOrderId error:', error)
-      return null
+      console.error('Failed to check payment status:', error)
+      throw new Error('Failed to check payment status')
     }
   }
 
   /**
-   * Get exchange rate
+   * Convert currency to USDC
    */
-  async getExchangeRate(fromCurrency: string, toCurrency: string): Promise<number> {
-    try {
-      const endpoint = `${this.config.baseUrl}/v1/rates/${fromCurrency}/${toCurrency}`
+  async convertCurrency(amount: number, fromCurrency: string = 'USD'): Promise<ConversionResult> {
+    const params = new URLSearchParams({
+      from: fromCurrency,
+      value: amount.toString(),
+    })
 
-      const response = await fetch(endpoint, {
+    const url = `${this.apiBase}/control/convert.php?${params.toString()}`
+
+    try {
+      const response = await fetch(url, {
         method: 'GET',
-        headers: this.getHeaders()
+        headers: {
+          'Accept': 'application/json',
+        },
       })
 
       if (!response.ok) {
-        throw new Error(`PayGate API error: ${response.statusText}`)
+        throw new Error(`PayGate API error: ${response.status}`)
       }
 
       const data = await response.json()
 
-      return data.rate || 0
-    } catch (error) {
-      console.error('PayGate getExchangeRate error:', error)
-      // Fallback rates
-      const fallbackRates: Record<string, number> = {
-        'USD_BTC': 0.000023,
-        'USD_ETH': 0.00044,
-        'USD_USDT': 1.0,
-        'USD_USDC': 1.0
+      return {
+        status: data.status,
+        valueCoin: data.value_coin,
+        exchangeRate: data.exchange_rate,
       }
-      return fallbackRates[`${fromCurrency}_${toCurrency}`] || 0
+    } catch (error) {
+      console.error('Failed to convert currency:', error)
+      // Return fallback conversion (1:1 for USD)
+      return {
+        status: 'error',
+        valueCoin: amount.toString(),
+        exchangeRate: '1.0',
+      }
     }
   }
 
   /**
-   * Verify webhook signature
+   * Parse callback parameters from GET request
    */
-  verifyWebhook(payload: string, signature: string): boolean {
-    try {
-      const expectedSignature = crypto
-        .createHmac('sha256', this.config.webhookSecret)
-        .update(payload)
-        .digest('hex')
+  parseCallback(searchParams: URLSearchParams): PayGateCallback {
+    return {
+      orderId: searchParams.get('orderId') || '',
+      valueCoin: searchParams.get('value_coin') || '',
+      coin: (searchParams.get('coin') as 'polygon_usdc' | 'polygon_usdt') || 'polygon_usdc',
+      txidIn: searchParams.get('txid_in') || '',
+      txidOut: searchParams.get('txid_out') || '',
+      addressIn: searchParams.get('address_in') || '',
+      // Include all other parameters
+      ...Object.fromEntries(searchParams.entries()),
+    }
+  }
 
-      return signature === expectedSignature
+  /**
+   * Verify callback authenticity
+   * Note: PayGate.to doesn't use signature verification, but we can validate
+   * by checking the payment status with the IPN token
+   */
+  async verifyCallback(ipnToken: string): Promise<boolean> {
+    try {
+      const status = await this.checkPaymentStatus(ipnToken)
+      return status.status === 'paid'
     } catch (error) {
-      console.error('PayGate verifyWebhook error:', error)
+      console.error('Failed to verify callback:', error)
       return false
     }
   }
-
-  /**
-   * Get payment QR code URL
-   */
-  getQRCodeUrl(paymentAddress: string, amount: number, currency: string): string {
-    let uri = ''
-
-    switch (currency) {
-      case 'BTC':
-        uri = `bitcoin:${paymentAddress}?amount=${amount}`
-        break
-      case 'ETH':
-        uri = `ethereum:${paymentAddress}?value=${amount}`
-        break
-      case 'USDT':
-      case 'USDC':
-        uri = `ethereum:${paymentAddress}?value=${amount}`
-        break
-      default:
-        uri = paymentAddress
-    }
-
-    return `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(uri)}&size=300x300`
-  }
-
-  /**
-   * Get request headers
-   */
-  private getHeaders(): HeadersInit {
-    return {
-      'Content-Type': 'application/json',
-      'X-API-Key': this.config.apiKey,
-      'X-API-Secret': this.config.apiSecret
-    }
-  }
-
-  /**
-   * Map PayGate API response to our format
-   */
-  private mapInvoiceResponse(data: any): PayGateInvoice {
-    return {
-      id: data.id || data.invoice_id,
-      orderId: data.order_id,
-      status: this.normalizeStatus(data.status),
-      amount: parseFloat(data.amount),
-      currency: data.currency || 'USD',
-      cryptoAmount: parseFloat(data.crypto_amount || data.amount_crypto),
-      cryptoCurrency: data.crypto_currency || data.currency_crypto,
-      paymentAddress: data.payment_address || data.address,
-      qrCode: data.qr_code || this.getQRCodeUrl(
-        data.payment_address || data.address,
-        parseFloat(data.crypto_amount || data.amount_crypto),
-        data.crypto_currency || data.currency_crypto
-      ),
-      expiresAt: data.expires_at || data.expiry_time,
-      createdAt: data.created_at || data.created,
-      confirmedAt: data.confirmed_at || data.confirmed,
-      confirmations: parseInt(data.confirmations || '0'),
-      requiredConfirmations: parseInt(data.required_confirmations || '3'),
-      txHash: data.tx_hash || data.transaction_hash
-    }
-  }
-
-  /**
-   * Normalize status from PayGate to our format
-   */
-  private normalizeStatus(status: string): PayGateInvoice['status'] {
-    const statusMap: Record<string, PayGateInvoice['status']> = {
-      'new': 'pending',
-      'pending': 'pending',
-      'processing': 'processing',
-      'confirming': 'processing',
-      'confirmed': 'confirmed',
-      'completed': 'completed',
-      'paid': 'completed',
-      'expired': 'expired',
-      'cancelled': 'expired',
-      'failed': 'failed'
-    }
-
-    return statusMap[status.toLowerCase()] || 'pending'
-  }
-}
-
-/**
- * Initialize PayGate service
- */
-export function createPayGateService(): PayGateService {
-  const config: PayGateConfig = {
-    apiKey: process.env.PAYGATE_API_KEY || '',
-    apiSecret: process.env.PAYGATE_API_SECRET || '',
-    webhookSecret: process.env.PAYGATE_WEBHOOK_SECRET || '',
-    baseUrl: process.env.PAYGATE_BASE_URL || 'https://api.paygate.to',
-    network: (process.env.NODE_ENV === 'production' ? 'mainnet' : 'testnet') as 'mainnet' | 'testnet'
-  }
-
-  // Validate configuration
-  if (!config.apiKey || !config.apiSecret) {
-    console.warn('PayGate.io credentials not configured. Payment processing will be disabled.')
-  }
-
-  return new PayGateService(config)
 }
 
 // Export singleton instance
-export const paygate = createPayGateService()
+export const paygate = new PayGateService()
 
-/**
- * Helper: Convert USD to crypto amount
- */
-export async function convertUSDToCrypto(
-  usdAmount: number,
-  cryptoCurrency: 'BTC' | 'ETH' | 'USDT' | 'USDC'
-): Promise<number> {
-  try {
-    const rate = await paygate.getExchangeRate('USD', cryptoCurrency)
-    return usdAmount * rate
-  } catch (error) {
-    console.error('Convert USD to crypto error:', error)
-    return 0
-  }
-}
-
-/**
- * Helper: Get supported currencies
- */
-export function getSupportedCurrencies(): Array<{
-  code: 'BTC' | 'ETH' | 'USDT' | 'USDC'
-  name: string
-  symbol: string
-  decimals: number
-}> {
-  return [
-    { code: 'BTC', name: 'Bitcoin', symbol: '₿', decimals: 8 },
-    { code: 'ETH', name: 'Ethereum', symbol: 'Ξ', decimals: 18 },
-    { code: 'USDT', name: 'Tether', symbol: '₮', decimals: 6 },
-    { code: 'USDC', name: 'USD Coin', symbol: '$', decimals: 6 }
-  ]
+// Export helper function for backwards compatibility
+export async function createPaymentLink(
+  orderId: string,
+  amount: number,
+  customerEmail?: string
+): Promise<PaymentLink> {
+  return paygate.createPaymentLink({
+    orderId,
+    amount,
+    customerEmail,
+    multiProvider: true, // Show provider selection
+  })
 }

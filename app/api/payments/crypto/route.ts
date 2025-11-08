@@ -6,13 +6,20 @@ import { withCsrfAndRateLimit } from '@/lib/with-csrf'
 import { RateLimits } from '@/lib/rate-limit'
 import { validate } from '@/lib/validate'
 import { createCryptoPaymentSchema } from '@/lib/validations/order'
-import { paygate, convertUSDToCrypto } from '@/lib/paygate'
+import { paygate } from '@/lib/paygate'
 import { withIdempotency } from '@/lib/idempotency'
 import { createEscrow } from '@/lib/escrow'
 import { recordPaymentAttempt } from '@/lib/payment-retry'
 
 /**
- * POST /api/payments/crypto - Create a crypto payment with PayGate.io
+ * POST /api/payments/crypto - Create a payment link with PayGate.to
+ *
+ * Customers can pay with:
+ * - Credit/Debit Cards
+ * - Apple Pay / Google Pay
+ * - Bank Transfers
+ *
+ * Merchant receives USDC on Polygon network
  */
 async function createPaymentHandler(request: NextRequest) {
   try {
@@ -29,7 +36,7 @@ async function createPaymentHandler(request: NextRequest) {
     const [data, validationError] = await validate(request, createCryptoPaymentSchema)
     if (validationError) return validationError
 
-    const { orderIds, cryptoCurrency } = data
+    const { orderIds } = data
 
     // Fetch orders
     const orders = await prisma.order.findMany({
@@ -41,15 +48,15 @@ async function createPaymentHandler(request: NextRequest) {
       include: {
         product: {
           select: {
-            title: true
-          }
+            title: true,
+          },
         },
         buyer: {
           select: {
-            email: true
-          }
-        }
-      }
+            email: true,
+          },
+        },
+      },
     })
 
     if (orders.length === 0) {
@@ -60,289 +67,128 @@ async function createPaymentHandler(request: NextRequest) {
     }
 
     const totalAmount = orders.reduce((sum, order) => sum + order.totalAmount, 0)
-
-    // Get crypto amount using real exchange rate from PayGate
-    const cryptoAmount = await convertUSDToCrypto(totalAmount, cryptoCurrency)
-
-    if (!cryptoAmount || cryptoAmount <= 0) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: 'Failed to get exchange rate. Please try again.' },
-        { status: 500 }
-      )
-    }
-
-    // Create PayGate invoice for first order (or combine if multiple)
     const primaryOrder = orders[0]
-    const description = orders.length > 1
-      ? `${orders.length} products: ${orders.map(o => o.product.title).join(', ')}`
-      : `Order for ${primaryOrder.product.title}`
 
-    let invoice
+    // Create PayGate payment link
+    let paymentLink
     try {
-      invoice = await paygate.createInvoice({
+      paymentLink = await paygate.createPaymentLink({
         orderId: primaryOrder.id,
         amount: totalAmount,
-        currency: cryptoCurrency,
-        description: description.substring(0, 200), // Limit description length
-        buyerEmail: primaryOrder.buyer.email,
-        callbackUrl: `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/webhook`,
-        returnUrl: `${process.env.NEXT_PUBLIC_APP_URL}/orders/${primaryOrder.id}`,
-        expiryMinutes: 60 // 1 hour to complete payment
+        currency: 'USD',
+        customerEmail: primaryOrder.buyer.email,
+        multiProvider: true, // Show provider selection (MoonPay, Banxa, etc.)
       })
+
+      console.log(`✅ Created PayGate payment link for order ${primaryOrder.id}`)
     } catch (error) {
-      console.error('PayGate invoice creation error:', error)
+      console.error('PayGate payment link creation error:', error)
 
       // Record failed payment attempt
       const tempTransaction = await prisma.transaction.create({
         data: {
           amount: totalAmount,
           currency: 'USD',
-          cryptoCurrency,
-          cryptoAmount,
+          cryptoCurrency: 'USDC', // PayGate.to pays out in USDC
+          cryptoAmount: totalAmount, // Approximate 1:1 for USDC
           walletAddress: 'pending',
           status: 'FAILED',
           paymentGateway: 'paygate',
-          gatewayResponse: error instanceof Error ? error.message : 'Unknown error',
+          gatewayResponse: JSON.stringify({ error: String(error) }),
           userId: user.userId,
-          orderId: primaryOrder.id
-        }
+          orderId: primaryOrder.id,
+        },
       })
 
-      await recordPaymentAttempt(
-        tempTransaction.id,
-        1,
-        'FAILED',
-        'GATEWAY_ERROR',
-        error instanceof Error ? error.message : 'Failed to create payment invoice'
-      )
+      await recordPaymentAttempt(tempTransaction.id, 1, 'FAILED', 'PAYMENT_GATEWAY_ERROR', String(error))
 
       return NextResponse.json<ApiResponse>(
-        { success: false, error: 'Failed to create payment. Please try again.' },
+        { success: false, error: 'Failed to create payment link. Please try again.' },
         { status: 500 }
       )
     }
 
-    // Create transaction records for all orders
+    // Create transactions for each order
     const transactions = await Promise.all(
-      orders.map((order) =>
-        prisma.transaction.create({
+      orders.map(async (order) => {
+        return await prisma.transaction.create({
           data: {
             amount: order.totalAmount,
             currency: 'USD',
-            cryptoCurrency,
-            cryptoAmount: order.totalAmount * cryptoAmount / totalAmount, // Proportional amount
-            walletAddress: invoice.paymentAddress,
-            transactionHash: null,
+            cryptoCurrency: 'USDC',
+            cryptoAmount: order.totalAmount, // Approximate 1:1
+            walletAddress: paymentLink.encryptedAddress,
             status: 'PENDING',
             paymentGateway: 'paygate',
             gatewayResponse: JSON.stringify({
-              invoiceId: invoice.id,
-              expiresAt: invoice.expiresAt
+              ipnToken: paymentLink.ipnToken,
+              paymentUrl: paymentLink.url,
+              encryptedAddress: paymentLink.encryptedAddress,
             }),
             userId: user.userId,
             orderId: order.id,
           },
         })
-      )
+      })
     )
 
-    // Update orders to PROCESSING status
-    await prisma.order.updateMany({
-      where: {
-        id: { in: orderIds },
-      },
-      data: {
-        status: 'PROCESSING',
-      },
-    })
-
-    // Create escrow for high-value orders (optional, can be configured)
+    // Create escrow for high-value orders (>= $100)
     if (totalAmount >= 100) {
       for (const order of orders) {
-        await createEscrow(order.id).catch(err =>
-          console.error(`Failed to create escrow for order ${order.id}:`, err)
-        )
+        try {
+          await createEscrow(order.id)
+          console.log(`✅ Created escrow for order ${order.id}`)
+        } catch (error) {
+          console.error(`Failed to create escrow for order ${order.id}:`, error)
+          // Continue even if escrow fails - payment can still proceed
+        }
       }
     }
 
-    // Record successful payment attempt
-    await recordPaymentAttempt(
-      transactions[0].id,
-      1,
-      'SUCCESS',
-      undefined,
-      undefined,
-      { invoiceId: invoice.id }
-    )
+    // Update orders to PROCESSING status
+    await prisma.order.updateMany({
+      where: { id: { in: orderIds } },
+      data: { status: 'PROCESSING' },
+    })
 
-    return NextResponse.json<ApiResponse>(
-      {
-        success: true,
-        data: {
-          paymentId: transactions[0].id,
-          invoiceId: invoice.id,
-          cryptoCurrency,
-          cryptoAmount: invoice.cryptoAmount,
-          walletAddress: invoice.paymentAddress,
-          totalAmount,
-          orders: orders.length,
-          qrCode: invoice.qrCode,
-          expiresAt: invoice.expiresAt,
-          confirmations: {
-            current: invoice.confirmations,
-            required: invoice.requiredConfirmations
-          },
-          instructions: {
-            message: `Send exactly ${invoice.cryptoAmount} ${cryptoCurrency} to the address below`,
-            address: invoice.paymentAddress,
-            expiresIn: '60 minutes',
-            network: cryptoCurrency === 'USDT' || cryptoCurrency === 'USDC' ? 'ERC-20' : cryptoCurrency
-          }
-        },
-        message: 'Payment request created successfully',
+    // Record initial payment attempt
+    await recordPaymentAttempt(transactions[0].id, 1, 'SUCCESS', undefined, 'Payment link created successfully')
+
+    return NextResponse.json<ApiResponse>({
+      success: true,
+      data: {
+        paymentId: transactions[0].id,
+        paymentUrl: paymentLink.url,
+        amount: totalAmount,
+        currency: 'USD',
+        payoutCurrency: 'USDC',
+        payoutNetwork: 'Polygon',
+        ipnToken: paymentLink.ipnToken,
+        // Payment methods available
+        paymentMethods: [
+          'Credit/Debit Card',
+          'Apple Pay',
+          'Google Pay',
+          'Bank Transfer',
+        ],
+        // Redirect user to this URL to complete payment
+        redirectUrl: paymentLink.url,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
       },
-      { status: 201 }
-    )
+    })
   } catch (error) {
-    console.error('Create payment error:', error)
+    console.error('Crypto payment error:', error)
     return NextResponse.json<ApiResponse>(
-      { success: false, error: 'Internal server error' },
+      { success: false, error: 'Failed to create payment' },
       { status: 500 }
     )
   }
 }
 
-// Export POST with idempotency, CSRF protection, and rate limiting
+// Apply middleware: idempotency, CSRF, rate limiting
 export const POST = withIdempotency(
   withCsrfAndRateLimit(
     { ...RateLimits.PAYMENT, namespace: 'payments:crypto' },
     createPaymentHandler
   )
 )
-
-/**
- * GET /api/payments/crypto - Get payment status
- */
-export async function GET(request: NextRequest) {
-  try {
-    const user = getUserFromRequest(request)
-
-    if (!user) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    const { searchParams } = new URL(request.url)
-    const paymentId = searchParams.get('paymentId')
-    const invoiceId = searchParams.get('invoiceId')
-
-    if (!paymentId && !invoiceId) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: 'Payment ID or Invoice ID required' },
-        { status: 400 }
-      )
-    }
-
-    let transaction
-
-    if (paymentId) {
-      transaction = await prisma.transaction.findUnique({
-        where: { id: paymentId },
-        include: {
-          order: {
-            include: {
-              product: {
-                select: {
-                  title: true,
-                  fileUrl: true,
-                  fileName: true,
-                },
-              },
-            },
-          },
-        },
-      })
-    } else if (invoiceId) {
-      transaction = await prisma.transaction.findFirst({
-        where: {
-          gatewayResponse: {
-            contains: invoiceId
-          }
-        },
-        include: {
-          order: {
-            include: {
-              product: {
-                select: {
-                  title: true,
-                  fileUrl: true,
-                  fileName: true,
-                },
-              },
-            },
-          },
-        },
-      })
-    }
-
-    if (!transaction) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: 'Payment not found' },
-        { status: 404 }
-      )
-    }
-
-    if (transaction.userId !== user.userId) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: 'Forbidden' },
-        { status: 403 }
-      )
-    }
-
-    // Get latest status from PayGate if transaction is still pending
-    let invoiceStatus = null
-    if (transaction.status === 'PENDING' && transaction.gatewayResponse) {
-      try {
-        const gatewayData = JSON.parse(transaction.gatewayResponse)
-        if (gatewayData.invoiceId) {
-          invoiceStatus = await paygate.getInvoice(gatewayData.invoiceId)
-
-          // Update transaction if status changed
-          const normalizedStatus = invoiceStatus.status.toUpperCase()
-          if (normalizedStatus !== transaction.status) {
-            await prisma.transaction.update({
-              where: { id: transaction.id },
-              data: {
-                status: normalizedStatus as any,
-                transactionHash: invoiceStatus.txHash,
-                confirmedAt: invoiceStatus.confirmedAt ? new Date(invoiceStatus.confirmedAt) : null
-              }
-            })
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch invoice status:', error)
-      }
-    }
-
-    return NextResponse.json<ApiResponse>(
-      {
-        success: true,
-        data: {
-          ...transaction,
-          invoice: invoiceStatus,
-          gatewayResponse: transaction.gatewayResponse ? JSON.parse(transaction.gatewayResponse) : null
-        },
-      },
-      { status: 200 }
-    )
-  } catch (error) {
-    console.error('Get payment error:', error)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
-  }
-}

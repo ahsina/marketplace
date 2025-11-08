@@ -6,6 +6,8 @@ import { generateOrderNumber, calculatePlatformFee, calculateSellerAmount } from
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { withCsrfAndRateLimit } from '@/lib/with-csrf'
 import { RateLimits } from '@/lib/rate-limit'
+import { validate } from '@/lib/validate'
+import { createOrderSchema } from '@/lib/validations/order'
 
 async function createOrderHandler(request: NextRequest) {
   try {
@@ -18,14 +20,11 @@ async function createOrderHandler(request: NextRequest) {
       )
     }
 
-    const { productIds } = await request.json()
+    // Validate request body
+    const [data, validationError] = await validate(request, createOrderSchema)
+    if (validationError) return validationError
 
-    if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: 'No products specified' },
-        { status: 400 }
-      )
-    }
+    const { productIds } = data
 
     // Fetch products
     const products = await prisma.product.findMany({

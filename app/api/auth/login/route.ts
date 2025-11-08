@@ -5,18 +5,16 @@ import { ApiResponse } from '@/types'
 import speakeasy from 'speakeasy'
 import { withRateLimit } from '@/lib/with-rate-limit'
 import { RateLimits } from '@/lib/rate-limit'
+import { validate } from '@/lib/validate'
+import { loginSchema } from '@/lib/validations/auth'
 
 async function loginHandler(request: NextRequest) {
   try {
-    const { emailOrUsername, password, twoFactorCode } = await request.json()
+    // Validate request body
+    const [data, validationError] = await validate(request, loginSchema)
+    if (validationError) return validationError
 
-    // Validation
-    if (!emailOrUsername || !password) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: 'Email/username and password are required' },
-        { status: 400 }
-      )
-    }
+    const { emailOrUsername, password, twoFactorCode } = data
 
     // Find user
     const user = await prisma.user.findFirst({

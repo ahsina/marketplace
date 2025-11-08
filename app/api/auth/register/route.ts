@@ -6,18 +6,16 @@ import { nanoid } from 'nanoid'
 import { sendEmail, getWelcomeEmail, getEmailVerificationEmail } from '@/lib/email'
 import { withRateLimit } from '@/lib/with-rate-limit'
 import { RateLimits } from '@/lib/rate-limit'
+import { validate } from '@/lib/validate'
+import { registerSchema } from '@/lib/validations/auth'
 
 async function registerHandler(request: NextRequest) {
   try {
-    const { email, username, password, referralCode } = await request.json()
+    // Validate request body
+    const [data, validationError] = await validate(request, registerSchema)
+    if (validationError) return validationError
 
-    // Validation
-    if (!email || !username || !password) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: 'Email, username, and password are required' },
-        { status: 400 }
-      )
-    }
+    const { email, username, password, referralCode } = data
 
     // Check if user exists
     const existingUser = await prisma.user.findFirst({

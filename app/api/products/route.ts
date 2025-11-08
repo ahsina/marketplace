@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { getUserFromRequest } from '@/lib/auth'
 import { ApiResponse, PaginatedResponse } from '@/types'
 import { withCsrf } from '@/lib/with-csrf'
+import { validate } from '@/lib/validate'
+import { createProductSchema } from '@/lib/validations/product'
 
 export async function GET(request: NextRequest) {
   try {
@@ -145,7 +147,10 @@ async function createProductHandler(request: NextRequest) {
       )
     }
 
-    const body = await request.json()
+    // Validate request body
+    const [data, validationError] = await validate(request, createProductSchema)
+    if (validationError) return validationError
+
     const {
       title,
       description,
@@ -163,31 +168,24 @@ async function createProductHandler(request: NextRequest) {
       downloadLimit,
       requiresLicense,
       drmEnabled,
-    } = body
-
-    if (!title || !description || !price || !categoryId || !fileUrl || !fileName || !fileSize) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: 'Missing required fields' },
-        { status: 400 }
-      )
-    }
+    } = data
 
     const product = await prisma.product.create({
       data: {
         title,
         description,
         shortDescription,
-        price: parseFloat(price),
-        discountPrice: discountPrice ? parseFloat(discountPrice) : null,
+        price, // Already a number from Zod validation
+        discountPrice: discountPrice || null,
         categoryId,
         fileUrl,
         fileName,
-        fileSize: parseInt(fileSize),
+        fileSize, // Already a number from Zod validation
         thumbnailUrl,
         demoUrl,
         tags: tags ? JSON.stringify(tags) : null,
         currentVersion: currentVersion || '1.0.0',
-        downloadLimit: downloadLimit ? parseInt(downloadLimit) : null,
+        downloadLimit: downloadLimit || null,
         requiresLicense: requiresLicense || false,
         drmEnabled: drmEnabled || false,
         sellerId: user.userId,

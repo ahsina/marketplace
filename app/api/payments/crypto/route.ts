@@ -4,6 +4,8 @@ import { getUserFromRequest } from '@/lib/auth'
 import { ApiResponse } from '@/types'
 import { withCsrfAndRateLimit } from '@/lib/with-csrf'
 import { RateLimits } from '@/lib/rate-limit'
+import { validate } from '@/lib/validate'
+import { createCryptoPaymentSchema } from '@/lib/validations/order'
 
 // Supported cryptocurrencies with current exchange rates (mock data)
 const CRYPTO_RATES: Record<string, number> = {
@@ -32,21 +34,11 @@ async function createPaymentHandler(request: NextRequest) {
       )
     }
 
-    const { orderIds, cryptoCurrency } = await request.json()
+    // Validate request body
+    const [data, validationError] = await validate(request, createCryptoPaymentSchema)
+    if (validationError) return validationError
 
-    if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: 'No orders specified' },
-        { status: 400 }
-      )
-    }
-
-    if (!cryptoCurrency || !CRYPTO_RATES[cryptoCurrency]) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: 'Invalid cryptocurrency' },
-        { status: 400 }
-      )
-    }
+    const { orderIds, cryptoCurrency } = data
 
     // Fetch orders
     const orders = await prisma.order.findMany({

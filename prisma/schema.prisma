@@ -1135,3 +1135,69 @@ model EscrowTransaction {
   @@index([status])
   @@index([createdAt])
 }
+
+// ==============================================
+// PAYMENT SETTINGS (Admin Configurable)
+// ==============================================
+
+enum PaymentProvider {
+  MOONPAY
+  BANXA
+  TRANSAK
+  STRIPE
+  MULTI_PROVIDER // Shows all providers to user
+}
+
+model PaymentSettings {
+  id        String   @id @default(cuid())
+
+  // PayGate.to Configuration
+  paygateEnabled        Boolean @default(true)
+  paygateMerchantWallet String? // Polygon USDC wallet address
+  paygateBaseUrl        String  @default("https://api.paygate.to")
+  paygateCheckoutUrl    String  @default("https://checkout.paygate.to")
+
+  // Payment Provider Settings
+  defaultProvider       PaymentProvider @default(MULTI_PROVIDER)
+  enabledProviders      String @default("moonpay,banxa,transak,stripe") // Comma-separated
+
+  // Payment Methods
+  enableCreditCard      Boolean @default(true)
+  enableApplePay        Boolean @default(true)
+  enableGooglePay       Boolean @default(true)
+  enableBankTransfer    Boolean @default(true)
+
+  // Currency Settings
+  supportedCurrencies   String @default("USD,EUR,GBP,CAD") // Comma-separated
+  defaultCurrency       String @default("USD")
+
+  // Fee Configuration
+  platformFeePercentage Float   @default(5.0)   // Platform fee %
+  paygateFeePercentage  Float   @default(1.0)   // PayGate.to fee %
+  minimumOrderAmount    Float   @default(5.0)   // Minimum order in USD
+  maximumOrderAmount    Float   @default(10000.0) // Maximum order in USD
+
+  // Escrow Settings
+  escrowEnabled         Boolean @default(true)
+  escrowThreshold       Float   @default(100.0) // Orders >= this amount use escrow
+  escrowAutoReleaseHours Int    @default(72)    // Auto-release after N hours
+
+  // Advanced Settings
+  testMode              Boolean @default(false)  // Use testnet/sandbox
+  customDomain          String? // White-label domain for PayGate
+  callbackUrl           String? // Override callback URL
+
+  // Affiliate Settings
+  affiliateEnabled      Boolean @default(false)
+  affiliateWallet       String? // Affiliate Polygon wallet
+  affiliateFeePercentage Float  @default(10.0)  // Affiliate commission %
+
+  // Metadata
+  updatedBy     String?  // Admin user ID who last updated
+  notes         String?  // Admin notes
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("payment_settings")
+}

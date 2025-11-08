@@ -9,17 +9,73 @@
  * Merchants receive instant USDC payouts on Polygon network.
  *
  * API Documentation: https://documenter.getpostman.com/view/14826208/2sA3Bj9aBi
+ *
+ * Settings are now managed via admin dashboard and stored in database.
+ * Environment variables are used as fallback for backwards compatibility.
  */
 
-// PayGate.to API Configuration
-const PAYGATE_API_BASE = process.env.PAYGATE_BASE_URL || 'https://api.paygate.to'
-const PAYGATE_CHECKOUT_BASE = process.env.PAYGATE_CHECKOUT_URL || 'https://checkout.paygate.to'
+import { prisma } from './prisma'
 
-// Merchant Configuration
-const MERCHANT_USDC_ADDRESS = process.env.PAYGATE_MERCHANT_WALLET || process.env.PLATFORM_WALLET_ADDRESS || ''
+// Settings cache to avoid database queries on every request
+let settingsCache: {
+  data: any | null
+  timestamp: number
+  ttl: number
+} = {
+  data: null,
+  timestamp: 0,
+  ttl: 60000, // Cache for 1 minute
+}
 
-if (!MERCHANT_USDC_ADDRESS) {
-  console.warn('⚠️  PAYGATE_MERCHANT_WALLET not configured. PayGate.to payments will fail.')
+/**
+ * Get payment settings from database (with caching)
+ */
+async function getPaymentSettings() {
+  const now = Date.now()
+
+  // Return cached settings if still valid
+  if (settingsCache.data && now - settingsCache.timestamp < settingsCache.ttl) {
+    return settingsCache.data
+  }
+
+  // Fetch from database
+  try {
+    const settings = await prisma.paymentSettings.findFirst({
+      orderBy: { createdAt: 'desc' },
+    })
+
+    if (settings) {
+      // Update cache
+      settingsCache.data = settings
+      settingsCache.timestamp = now
+      return settings
+    }
+  } catch (error) {
+    console.error('Failed to fetch payment settings from database:', error)
+  }
+
+  // Fallback to environment variables
+  const fallbackSettings = {
+    paygateEnabled: true,
+    paygateMerchantWallet: process.env.PAYGATE_MERCHANT_WALLET || process.env.PLATFORM_WALLET_ADDRESS || '',
+    paygateBaseUrl: process.env.PAYGATE_BASE_URL || 'https://api.paygate.to',
+    paygateCheckoutUrl: process.env.PAYGATE_CHECKOUT_URL || 'https://checkout.paygate.to',
+    defaultProvider: 'MULTI_PROVIDER' as const,
+    enabledProviders: 'moonpay,banxa,transak,stripe',
+    testMode: false,
+    customDomain: null,
+    callbackUrl: null,
+  }
+
+  // Cache fallback settings
+  settingsCache.data = fallbackSettings
+  settingsCache.timestamp = now
+
+  if (!fallbackSettings.paygateMerchantWallet) {
+    console.warn('⚠️  Payment settings not configured. Please configure via admin dashboard.')
+  }
+
+  return fallbackSettings
 }
 
 /**
@@ -92,28 +148,28 @@ export interface ConversionResult {
  * PayGate.to Service
  */
 class PayGateService {
-  private apiBase: string
-  private checkoutBase: string
-  private merchantWallet: string
-
-  constructor() {
-    this.apiBase = PAYGATE_API_BASE
-    this.checkoutBase = PAYGATE_CHECKOUT_BASE
-    this.merchantWallet = MERCHANT_USDC_ADDRESS
-  }
-
   /**
    * Create a payment wallet for an order
    */
   async createWallet(orderId: string): Promise<PayGateWallet> {
-    const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/paygate-callback`
+    const settings = await getPaymentSettings()
+
+    if (!settings.paygateEnabled) {
+      throw new Error('PayGate.to is currently disabled')
+    }
+
+    if (!settings.paygateMerchantWallet) {
+      throw new Error('Merchant wallet not configured. Please configure payment settings in admin dashboard.')
+    }
+
+    const callbackUrl = settings.callbackUrl || `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/paygate-callback`
 
     const params = new URLSearchParams({
-      address: this.merchantWallet,
+      address: settings.paygateMerchantWallet,
       callback: callbackUrl + `?orderId=${orderId}`,
     })
 
-    const url = `${this.apiBase}/control/wallet.php?${params.toString()}`
+    const url = `${settings.paygateBaseUrl}/control/wallet.php?${params.toString()}`
 
     try {
       const response = await fetch(url, {
@@ -145,15 +201,25 @@ class PayGateService {
    * Generate a payment link for customer checkout
    */
   async createPaymentLink(config: PaymentLinkConfig): Promise<PaymentLink> {
+    const settings = await getPaymentSettings()
+
+    if (!settings.paygateEnabled) {
+      throw new Error('PayGate.to is currently disabled')
+    }
+
     // First create a wallet
     const wallet = await this.createWallet(config.orderId)
 
-    const currency = config.currency || 'USD'
+    const currency = config.currency || settings.defaultCurrency || 'USD'
     const amount = config.amount.toFixed(2)
+
+    // Determine provider mode
+    const useMultiProvider = config.multiProvider ?? (settings.defaultProvider === 'MULTI_PROVIDER')
+    const provider = config.provider || (useMultiProvider ? null : settings.defaultProvider?.toLowerCase())
 
     let paymentUrl: string
 
-    if (config.multiProvider || !config.provider) {
+    if (useMultiProvider || !provider) {
       // Multi-provider selection page
       const params = new URLSearchParams({
         address: wallet.addressIn,
@@ -165,17 +231,18 @@ class PayGateService {
         params.append('email', config.customerEmail)
       }
 
-      if (config.customDomain) {
-        params.append('domain', config.customDomain)
+      const customDomain = config.customDomain || settings.customDomain
+      if (customDomain) {
+        params.append('domain', customDomain)
       }
 
-      paymentUrl = `${this.checkoutBase}/pay.php?${params.toString()}`
+      paymentUrl = `${settings.paygateCheckoutUrl}/pay.php?${params.toString()}`
     } else {
       // Specific provider checkout
       const params = new URLSearchParams({
         address: wallet.addressIn,
         amount: amount,
-        provider: config.provider,
+        provider: provider,
         currency: currency,
       })
 
@@ -183,7 +250,7 @@ class PayGateService {
         params.append('email', config.customerEmail)
       }
 
-      paymentUrl = `${this.checkoutBase}/process-payment.php?${params.toString()}`
+      paymentUrl = `${settings.paygateCheckoutUrl}/process-payment.php?${params.toString()}`
     }
 
     return {
@@ -199,11 +266,13 @@ class PayGateService {
    * Check payment status using IPN token
    */
   async checkPaymentStatus(ipnToken: string): Promise<PaymentStatus> {
+    const settings = await getPaymentSettings()
+
     const params = new URLSearchParams({
       ipn_token: ipnToken,
     })
 
-    const url = `${this.apiBase}/control/payment-status.php?${params.toString()}`
+    const url = `${settings.paygateBaseUrl}/control/payment-status.php?${params.toString()}`
 
     try {
       const response = await fetch(url, {
@@ -235,12 +304,14 @@ class PayGateService {
    * Convert currency to USDC
    */
   async convertCurrency(amount: number, fromCurrency: string = 'USD'): Promise<ConversionResult> {
+    const settings = await getPaymentSettings()
+
     const params = new URLSearchParams({
       from: fromCurrency,
       value: amount.toString(),
     })
 
-    const url = `${this.apiBase}/control/convert.php?${params.toString()}`
+    const url = `${settings.paygateBaseUrl}/control/convert.php?${params.toString()}`
 
     try {
       const response = await fetch(url, {
@@ -319,4 +390,21 @@ export async function createPaymentLink(
     customerEmail,
     multiProvider: true, // Show provider selection
   })
+}
+
+/**
+ * Clear payment settings cache
+ * Call this after updating settings in admin dashboard
+ */
+export function clearPaymentSettingsCache() {
+  settingsCache.data = null
+  settingsCache.timestamp = 0
+  console.log('✅ Payment settings cache cleared')
+}
+
+/**
+ * Get current payment settings (for admin dashboard)
+ */
+export async function getCurrentPaymentSettings() {
+  return await getPaymentSettings()
 }

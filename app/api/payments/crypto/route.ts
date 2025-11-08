@@ -6,7 +6,7 @@ import { withCsrfAndRateLimit } from '@/lib/with-csrf'
 import { RateLimits } from '@/lib/rate-limit'
 import { validate } from '@/lib/validate'
 import { createCryptoPaymentSchema } from '@/lib/validations/order'
-import { paygate } from '@/lib/paygate'
+import { paygate, getCurrentPaymentSettings } from '@/lib/paygate'
 import { withIdempotency } from '@/lib/idempotency'
 import { createEscrow } from '@/lib/escrow'
 import { recordPaymentAttempt } from '@/lib/payment-retry'
@@ -132,12 +132,13 @@ async function createPaymentHandler(request: NextRequest) {
       })
     )
 
-    // Create escrow for high-value orders (>= $100)
-    if (totalAmount >= 100) {
+    // Create escrow for high-value orders (based on settings)
+    const settings = await getCurrentPaymentSettings()
+    if (settings.escrowEnabled && totalAmount >= settings.escrowThreshold) {
       for (const order of orders) {
         try {
           await createEscrow(order.id)
-          console.log(`✅ Created escrow for order ${order.id}`)
+          console.log(`✅ Created escrow for order ${order.id} (amount: $${totalAmount} >= threshold: $${settings.escrowThreshold})`)
         } catch (error) {
           console.error(`Failed to create escrow for order ${order.id}:`, error)
           // Continue even if escrow fails - payment can still proceed

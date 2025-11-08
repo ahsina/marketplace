@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { verifyPassword, generateToken } from '@/lib/auth'
+import { verifyPassword, generateToken, checkUserBanStatus } from '@/lib/auth'
 import { ApiResponse } from '@/types'
 import speakeasy from 'speakeasy'
 import { withRateLimit } from '@/lib/with-rate-limit'
@@ -37,6 +37,28 @@ async function loginHandler(request: NextRequest) {
       return NextResponse.json<ApiResponse>(
         { success: false, error: 'Invalid credentials' },
         { status: 401 }
+      )
+    }
+
+    // Check if user is banned
+    const banStatus = await checkUserBanStatus(user.id)
+    if (banStatus && banStatus.isBanned) {
+      const banMessage = banStatus.isPermanent
+        ? `Your account has been permanently banned. Reason: ${banStatus.reason}`
+        : `Your account is temporarily banned until ${banStatus.bannedUntil?.toLocaleString()}. Reason: ${banStatus.reason}`
+
+      return NextResponse.json<ApiResponse>(
+        {
+          success: false,
+          error: 'Account banned',
+          data: {
+            isBanned: true,
+            reason: banStatus.reason,
+            bannedUntil: banStatus.bannedUntil,
+            isPermanent: banStatus.isPermanent
+          }
+        },
+        { status: 403 }
       )
     }
 

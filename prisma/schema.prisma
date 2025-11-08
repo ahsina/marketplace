@@ -57,6 +57,13 @@ model User {
   twoFactorEnabled  Boolean          @default(false)
   twoFactorSecret   String?
 
+  // Ban/Suspension
+  isBanned          Boolean          @default(false)
+  bannedAt          DateTime?
+  bannedUntil       DateTime?        // null = permanent ban
+  banReason         String?
+  bannedBy          String?          // Admin user ID who banned
+
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -75,6 +82,7 @@ model User {
   @@index([email])
   @@index([username])
   @@index([isVerifiedSeller])
+  @@index([isBanned])
 }
 
 model Category {
@@ -629,5 +637,100 @@ model WebhookLog {
   createdAt   DateTime @default(now())
 
   @@index([webhookId])
+  @@index([createdAt])
+}
+
+enum ReportType {
+  USER
+  PRODUCT
+  REVIEW
+  MESSAGE
+}
+
+enum ReportReason {
+  SPAM
+  INAPPROPRIATE_CONTENT
+  FRAUD
+  COPYRIGHT_VIOLATION
+  HARASSMENT
+  FAKE_PRODUCT
+  MALWARE
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  INVESTIGATING
+  RESOLVED
+  DISMISSED
+}
+
+model ContentReport {
+  id          String       @id @default(cuid())
+  reporterId  String       // User who reported
+  type        ReportType
+  reason      ReportReason
+  description String?
+  status      ReportStatus @default(PENDING)
+
+  // Polymorphic relations (only one should be set)
+  targetUserId    String?
+  targetProductId String?
+  targetReviewId  String?
+  targetMessageId String?
+
+  // Admin handling
+  assignedTo  String?
+  resolution  String?
+  resolvedAt  DateTime?
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([reporterId])
+  @@index([status])
+  @@index([type])
+  @@index([targetUserId])
+  @@index([targetProductId])
+  @@index([createdAt])
+}
+
+enum FraudRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum FraudAlertType {
+  MULTIPLE_FAILED_PAYMENTS
+  SUSPICIOUS_REFUND_PATTERN
+  RAPID_ACCOUNT_CREATION
+  UNUSUAL_PURCHASE_PATTERN
+  HIGH_CHARGEBACK_RATE
+  FAKE_REVIEWS
+  PRICE_MANIPULATION
+  DUPLICATE_ACCOUNT
+}
+
+model FraudAlert {
+  id          String         @id @default(cuid())
+  userId      String
+  alertType   FraudAlertType
+  riskLevel   FraudRiskLevel
+  description String
+  metadata    String?        // JSON with additional details
+
+  isResolved  Boolean        @default(false)
+  resolvedAt  DateTime?
+  resolvedBy  String?        // Admin user ID
+  resolution  String?
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([riskLevel])
+  @@index([isResolved])
   @@index([createdAt])
 }
